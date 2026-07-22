@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-symmetric": true,
+  "title": "core.stats.correlation",
+  "description": "Correlation coefficient between two fields. x-symmetric=true means corr(a,b) and corr(b,a) share the same id.",
+  "type": "object",
+  "required": ["method", "coefficient", "sample_size"],
+  "additionalProperties": false,
+  "properties": {
+    "method": {
+      "type": "string",
+      "enum": ["pearson", "spearman", "kendall"],
+      "description": "Correlation method."
+    },
+    "coefficient": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Correlation coefficient."
+    },
+    "p_value": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "p-value of the correlation test (optional)."
+    },
+    "sample_size": {
+      "type": "integer",
+      "minimum": 2,
+      "description": "Number of paired observations used."
+    }
+  }
+}

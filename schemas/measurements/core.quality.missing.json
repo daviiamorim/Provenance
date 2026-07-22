@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "core.quality.missing",
+  "description": "Missing value counts and proportions for a column or an entire dataset.",
+  "type": "object",
+  "required": ["total_count", "missing_count", "missing_proportion"],
+  "additionalProperties": false,
+  "properties": {
+    "total_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of values (rows)."
+    },
+    "missing_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of null/missing values."
+    },
+    "missing_proportion": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of values that are missing."
+    }
+  }
+}

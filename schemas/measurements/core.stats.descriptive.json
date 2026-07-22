@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "core.stats.descriptive",
+  "description": "Descriptive statistics for a numeric column: count, mean, std, min, max, quartiles.",
+  "type": "object",
+  "required": ["count", "mean", "std", "min", "max", "q25", "q50", "q75"],
+  "additionalProperties": false,
+  "properties": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of non-null values."
+    },
+    "mean": { "type": "number" },
+    "std": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Sample standard deviation."
+    },
+    "min": { "type": "number" },
+    "max": { "type": "number" },
+    "q25": { "type": "number", "description": "25th percentile." },
+    "q50": { "type": "number", "description": "50th percentile (median)." },
+    "q75": { "type": "number", "description": "75th percentile." },
+    "null_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of null/missing values."
+    }
+  }
+}

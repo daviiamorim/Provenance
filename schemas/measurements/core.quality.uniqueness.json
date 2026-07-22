@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "core.quality.uniqueness",
+  "description": "Uniqueness metrics for a column: distinct value count and duplicate rate.",
+  "type": "object",
+  "required": ["total_count", "unique_count", "duplicate_count", "unique_proportion"],
+  "additionalProperties": false,
+  "properties": {
+    "total_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of non-null values."
+    },
+    "unique_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of distinct values."
+    },
+    "duplicate_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of duplicate (non-unique) values."
+    },
+    "unique_proportion": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of values that are unique."
+    }
+  }
+}

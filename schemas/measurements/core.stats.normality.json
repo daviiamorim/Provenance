@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "core.stats.normality",
+  "description": "Result of a normality test for a numeric column.",
+  "type": "object",
+  "required": ["test", "statistic", "p_value", "sample_size"],
+  "additionalProperties": false,
+  "properties": {
+    "test": {
+      "type": "string",
+      "enum": ["shapiro_wilk", "kolmogorov_smirnov", "dagostino_pearson", "jarque_bera"],
+      "description": "Name of the statistical test applied."
+    },
+    "statistic": {
+      "type": "number",
+      "description": "Test statistic value."
+    },
+    "p_value": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "p-value of the test."
+    },
+    "sample_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of observations used."
+    }
+  }
+}

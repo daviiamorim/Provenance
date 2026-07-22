@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "core.stats.frequency",
+  "description": "Frequency distribution for a categorical column.",
+  "type": "object",
+  "required": ["total_count", "frequencies"],
+  "additionalProperties": false,
+  "properties": {
+    "total_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of rows (including nulls)."
+    },
+    "frequencies": {
+      "type": "array",
+      "description": "Frequency table, one entry per distinct value.",
+      "items": {
+        "type": "object",
+        "required": ["value", "count", "proportion"],
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "description": "The categorical value (string, number, boolean, or null)."
+          },
+          "count": { "type": "integer", "minimum": 0 },
+          "proportion": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "null_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of null/missing values."
+    }
+  }
+}
