@@ -1,4 +1,4 @@
-# Prompt para o Claude Code
+# Especificação — arquitetura e modelo de dados
 
 ---
 
@@ -38,7 +38,9 @@ Existe ainda um quinto tipo, que **não** pertence à cadeia:
 
 ## 2. Modelo de dados
 
-Implemente em `core/model.py` usando dataclasses congeladas (`frozen=True`) ou Pydantic com modelos imutáveis. Todos os IDs são determinísticos.
+Implemente em `core/model.py` usando dataclasses congeladas (`frozen=True`). Todos os IDs são determinísticos. Estruturas imutáveis — tentativa de mutação levanta exceção.
+
+### Enumerações
 
 ```python
 class Layer(StrEnum):
@@ -60,78 +62,279 @@ class ScopeKind(StrEnum):
     SEGMENT = "segment"
     PAIR = "pair"
 
+class ArtifactKind(StrEnum):
+    VEGA_LITE = "vega_lite"
+    IMAGE = "image"
+    AUDIO = "audio"
+
+class ValidationLayer(StrEnum):
+    SYNTACTIC = "syntactic"
+    NUMERIC = "numeric"
+    SEMANTIC = "semantic"
+
+class ValidationVerdict(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+
+class ValidationStatus(StrEnum):
+    PASSED = "passed"
+    REJECTED_DISCARDED = "rejected_discarded"
+```
+
+### Estruturas principais
+
+```python
 @dataclass(frozen=True)
 class Scope:
     kind: ScopeKind
-    ref: str | None          # identificador dentro do escopo, quando aplicável
+    refs: tuple[str, ...]   # PAIR exige dois referentes; para tipos simétricos,
+                             # as refs são ordenadas canonicamente antes do hash
+    # INVARIANTE: refs nunca é vazia para os ScopeKinds que exigem referentes.
+    # A validação do tamanho mínimo fica no produtor, não no Scope.
 
 @dataclass(frozen=True)
 class Provenance:
     producer: str            # caminho totalmente qualificado do produtor
-    version: str             # semver DO PRODUTOR, independente da versão da aplicação
-    params: dict             # parâmetros efetivos usados, já resolvidos
+    version: str             # semver DO PRODUTOR
+    params: Mapping[str, object]   # parâmetros efetivos; NaN e Infinity são
+                                   # proibidos e rejeitados na construção
     input_digest: str        # sha256 dos bytes exatos que entraram no cálculo
     duration_ms: int
     seed: int | None         # obrigatório quando o algoritmo for estocástico
 
 @dataclass(frozen=True)
 class Measurement:
-    id: str
+    id: str                  # prefixo msr-, veja Derivação de ID
     dataset_id: str
-    run_id: str
-    type: str                # namespaced, ex: "core.stats.normality_test"
+    type: str                # namespaced, ex: "core.stats.normality"
     scope: Scope
-    payload: dict            # validado contra JSON Schema registrado para `type`
+    payload: Mapping[str, object]   # validado contra JSON Schema registrado para `type`
     provenance: Provenance
 
 @dataclass(frozen=True)
 class Finding:
-    id: str
+    id: str                  # prefixo fnd-
     dataset_id: str
-    run_id: str
     type: str
     scope: Scope
     statement: str           # frase curta, escrita pela regra, NÃO por LLM
     severity: Severity
-    derived_from: list[str]  # ids de Measurement — não vazio
-    rule: str                # identificador da regra
+    derived_from: tuple[str, ...]   # ids de Measurement (msr-) — não vazio
+    rule: str
     rule_version: str
 
 @dataclass(frozen=True)
 class Assessment:
-    id: str
+    id: str                  # prefixo ast-
     dataset_id: str
-    run_id: str
     type: str
     goal: str                # objetivo ao qual esta avaliação responde
     verdict: str
     severity: Severity
-    derived_from: list[str]  # ids de Finding — não vazio
+    derived_from: tuple[str, ...]   # ids de Finding (fnd-) — não vazio
     rule: str
     rule_version: str
-    policy: dict             # limiares efetivos usados, para auditoria
+    policy: Mapping[str, object]    # limiares efetivos usados, para auditoria
+
+@dataclass(frozen=True)
+class ValidationCheck:
+    layer: ValidationLayer
+    verdict: ValidationVerdict
+    reason_code: str
+    detail: Mapping[str, object]
+    duration_ms: int
+
+@dataclass(frozen=True)
+class ValidationRecord:
+    status: ValidationStatus
+    attempts: int
+    checks: tuple[ValidationCheck, ...]
+    final_layer_reached: str
 
 @dataclass(frozen=True)
 class Claim:
-    id: str
+    id: str                  # prefixo clm-, veja Derivação de ID
     dataset_id: str
-    run_id: str
-    text: str                # única string de texto livre gerada por LLM no sistema
-    supports: list[str]      # ids de Assessment e/ou Finding — não vazio
+    run_id: str              # Claim pertence a uma execução; Measurement/Finding/
+                             # Assessment não — o pertencimento é run_membership
+    text: str                # ÚNICA string de texto livre gerada por LLM no sistema
+    supports: tuple[str, ...]  # ids de Assessment (ast-) e/ou Finding (fnd-) — não vazio
     validation: ValidationRecord
+
+@dataclass(frozen=True)
+class Artifact:
+    id: str                  # prefixo art-, veja Derivação de ID
+    dataset_id: str
+    capability_id: str
+    kind: ArtifactKind
+    payload: Mapping[str, object]   # spec Vega-Lite, URI de imagem, etc.
+    depicts: tuple[str, ...]  # ids de Measurement (msr-) — NÃO PODE SER VAZIO
+    provenance: Provenance
 ```
 
-### Determinismo do ID
+### run_id e run_membership
 
-O `id` de Measurement, Finding e Assessment é derivado por hash estável de `(dataset_id, type, scope, params_ou_policy, producer, version)` — **e não** de timestamp, contador ou UUID aleatório. Consequência pretendida: reexecutar o mesmo pipeline sobre o mesmo dataset com o mesmo código produz exatamente os mesmos IDs, o que torna dois relatórios comparáveis por diff. Escreva um teste que rode o pipeline duas vezes e afirme igualdade de todos os IDs.
+`run_id` **não** aparece em Measurement, Finding nem Assessment. O pertencimento a uma execução é uma associação separada: `run_membership(run_id, item_id, layer)`. Isso garante que dois runs com o mesmo código sobre o mesmo dataset não produzam colisão de chave primária — os IDs de Measurement/Finding/Assessment são idempotentes por construção.
 
-### Persistência
+`Claim` mantém `run_id` porque é gerado dentro de uma execução e nunca é reutilizado entre runs.
 
-PostgreSQL. Uma tabela por camada, `payload`/`policy` em `JSONB` com índice GIN. **Não crie tabela por domínio nem por tipo de measurement** — migrations por domínio inviabilizam o sistema de plugins. Referências entre camadas são arrays de texto com verificação de integridade na escrita.
+### Enforcement de prefixo
+
+Prefixo inválido em qualquer referência é rejeitado na construção com `ValueError`:
+
+| Campo | Prefixos aceitos |
+|---|---|
+| `Finding.derived_from` | `msr-` |
+| `Assessment.derived_from` | `fnd-` |
+| `Claim.supports` | `fnd-` ou `ast-` |
+| `Artifact.depicts` | `msr-` |
+
+Consequência: referências circulares entre camadas são estruturalmente impossíveis.
 
 ---
 
-## 3. O validador de Claims
+## 3. Serialização canônica e derivação de ID
+
+### Serialização canônica
+
+Toda serialização usada para hash segue estas regras:
+
+```python
+json.dumps(obj, sort_keys=True, separators=(',', ':'),
+           ensure_ascii=False, allow_nan=False)
+```
+
+Com pré-processamento obrigatório de todos os valores antes de serializar:
+
+- `NaN` e `Infinity` → `ValueError` (rejeitados; indicam cálculo quebrado)
+- `-0.0` → `0.0`
+- `float` cujo valor é inteiro (ex: `1.0`) → `int` (ex: `1`)
+- `dict` e `MappingProxyType` → processados recursivamente com `sort_keys`
+- `list` e `tuple` → processados recursivamente como array JSON
+
+**Teste-âncora obrigatório:** fixe a string canônica esperada de um dicionário de fixture e verifique bit a bit. Se a serialização mudar no futuro, o teste deve quebrar de forma explícita — não silenciosamente alterar todos os IDs.
+
+### dataset_id
+
+Derivado do conteúdo, nunca atribuído externamente. Algoritmo:
+
+1. Para cada arquivo do dataset: calcule `sha256` dos bytes exatos.
+2. Monte uma lista de `(caminho_relativo, sha256_do_arquivo)` ordenada pelo caminho.
+3. Serialize canonicamente e calcule `sha256` da serialização.
+
+```
+dataset_id = "dset-" + sha256(canonical_json([
+    {"path": p, "digest": d}
+    for p, d in sorted_by_path
+]))[:32]
+```
+
+Mesma coleção de arquivos, mesmo conteúdo → mesmo `dataset_id`. Qualquer mudança de conteúdo produz `dataset_id` diferente, o que garante que a decisão de excluir `input_digest` do hash de Measurement não cria falsos-positivos de igualdade.
+
+### run_id
+
+Determinístico: SHA-256 canônico de `(dataset_id, versões de todos os produtores registrados — dict ordenado por nome do produtor, digest da configuração efetiva)`. Prefixo `run-`.
+
+```
+run_id = "run-" + sha256(canonical_json({
+    "dataset_id": dataset_id,
+    "producers": {name: version, ...},   # ordenado por nome
+    "config_digest": sha256_of_config,
+}))[:32]
+```
+
+Reexecutar com mesmo código e configuração é idempotente. Mudar código ou configuração cria novo `run_id`, comparável por diff com o anterior.
+
+### IDs de Measurement, Finding, Assessment
+
+Fórmula geral: `sha256(canonical_json(identity_dict))[:32]`, prefixado pela camada.
+
+**Measurement** — identidade lógica do cálculo:
+```python
+{
+    "dataset_id": dataset_id,
+    "type": type_,
+    "scope": {"kind": scope.kind.value, "refs": list(scope.refs)},
+    "params": dict(provenance.params),
+    "producer": provenance.producer,
+    "version": provenance.version,
+}
+```
+Para tipos declarados como simétricos no JSON Schema (`"x-symmetric": true`), as `refs` são ordenadas canonicamente antes de entrar na identidade — `corr(a, b)` e `corr(b, a)` produzem o mesmo `id`.
+
+**Finding** — identidade da regra aplicada:
+```python
+{
+    "dataset_id": dataset_id,
+    "type": type_,
+    "scope": {"kind": scope.kind.value, "refs": list(scope.refs)},
+    "params": {},
+    "producer": rule,
+    "version": rule_version,
+}
+```
+
+**Assessment** — identidade da política aplicada ao objetivo:
+```python
+{
+    "dataset_id": dataset_id,
+    "type": type_,
+    "scope": {"kind": scope.kind.value, "refs": list(scope.refs)},
+    "goal": goal,
+    "params": dict(policy),
+    "producer": rule,
+    "version": rule_version,
+}
+```
+
+(`goal` está na fórmula de Assessment porque a mesma regra com a mesma política aplicada a goals distintos produz Assessments semanticamente distintos.)
+
+### Claim.id
+
+```
+clm- + sha256(canonical_json({
+    "run_id": run_id,
+    "text": unicodedata.normalize("NFC", text.strip()),
+    "supports": sorted(supports),
+}))[:32]
+```
+
+Não é determinístico em relação à entrada do pipeline (o texto vem de LLM), mas é determinístico em relação à saída — retry com o mesmo texto produz o mesmo `id`.
+
+### Artifact.id
+
+```
+art- + sha256(canonical_json({
+    "dataset_id": dataset_id,
+    "capability_id": capability_id,
+    "params": dict(provenance.params),
+    "producer": provenance.producer,
+    "version": provenance.version,
+}))[:32]
+```
+
+---
+
+## 4. Registro de JSON Schemas para Measurement
+
+Cada `type` de Measurement tem um JSON Schema registrado em arquivo versionado em `schemas/measurements/`. O `payload` é validado contra o schema no momento da construção de `Measurement`. Payload inválido ou tipo não registrado levanta exceção.
+
+O campo `"x-symmetric": true` no schema declara que o tipo é simétrico (as refs de escopo são ordenadas antes do hash). Atualmente declarado para `core.stats.correlation`.
+
+### Tipos iniciais
+
+| Tipo | Área | Scope típico |
+|---|---|---|
+| `core.stats.descriptive` | Estatística descritiva | `COLUMN` |
+| `core.stats.frequency` | Estatística descritiva | `COLUMN` |
+| `core.quality.missing` | Qualidade de dados | `COLUMN` ou `DATASET` |
+| `core.quality.uniqueness` | Qualidade de dados | `COLUMN` |
+| `core.stats.normality` | Estatística descritiva | `COLUMN` |
+| `core.stats.correlation` | Relação entre variáveis | `PAIR` |
+
+---
+
+## 5. O validador de Claims
 
 Este é o componente mais importante do sistema. Implemente em `core/validation/` como três camadas independentes, executadas em ordem crescente de custo, com parada na primeira rejeição.
 
@@ -148,11 +351,13 @@ Um segundo modelo recebe **apenas** a sentença isolada e **apenas** a serializa
 
 **Registro obrigatório.** Toda rejeição é persistida com: texto rejeitado, camada que rejeitou, motivo estruturado, tentativa. Esses registros são expostos na API e no frontend — eles não são log interno, são funcionalidade do produto.
 
+Um Claim com `status = rejected_discarded` pode existir como registro persistido, mas **nunca** é exibido ao usuário. Essa fronteira é aplicada na serialização da API, não na camada de apresentação.
+
 **Métrica obrigatória.** O sistema calcula e expõe, por execução: total de sentenças geradas, taxa de rejeição por camada, número de sentenças descartadas.
 
 ---
 
-## 4. Sistema de plugins
+## 6. Sistema de plugins
 
 Interface mínima, em `core/plugin.py`. **Não adicione métodos além destes.** Se algo parecer precisar de um sexto método, pare e me pergunte.
 
@@ -195,21 +400,24 @@ class Catalog:
 
 @dataclass(frozen=True)
 class CapabilityResult:
-    measurements: list[Measurement]
-    artifacts: list[Artifact]
+    measurements: tuple[Measurement, ...]
+    artifacts: tuple[Artifact, ...]
+    # INVARIANTE: artifacts não-vazio com measurements vazio é erro de construção.
 ```
 
 Restrições que o core deve impor:
 
 - Um plugin **nunca** escreve no banco, **nunca** chama modelo de linguagem, **nunca** gera HTML.
-- Descoberta de plugin via `entry_points` do `pyproject.toml`. Nada de registry próprio, hot reload ou sandbox.
-- `CapabilityResult` com `artifacts` não vazio e `measurements` vazio é erro, levantado pelo core.
+- Descoberta de plugin via `entry_points` do `pyproject.toml`, grupo `data_observatory.plugins`. Nada de registry próprio, hot reload ou sandbox.
+- `CapabilityResult` com `artifacts` não vazio e `measurements` vazio é erro, levantado pelo core na construção.
 
 Implemente **dois** plugins neste MVP: um para dados tabulares e um para áudio. O de áudio existe para forçar a interface a suportar um domínio estruturalmente diferente do tabular; não o trate como opcional.
 
+`Source`, `Dataset`, `RuleRef` e `ProfileRef` serão definidos na Etapa 2.
+
 ---
 
-## 5. Ingestão
+## 7. Ingestão
 
 Implemente upload genérico de arquivos. O usuário envia um ou mais arquivos, ou um arquivo compactado contendo vários. O sistema não pede ao usuário que informe formato ou domínio.
 
@@ -223,7 +431,7 @@ Arquivos maiores que a memória disponível devem ser lidos em blocos. Não carr
 
 ---
 
-## 6. Pipeline
+## 8. Pipeline
 
 ```
 upload → detecção de formato → sugestão de domínio → confirmação do usuário
@@ -244,7 +452,7 @@ Capabilities executadas sob demanda consomem um orçamento por sessão: tempo de
 
 ---
 
-## 7. Perguntas pré-respondidas
+## 9. Perguntas pré-respondidas
 
 O pipeline responde automaticamente um conjunto fixo e pequeno de perguntas na ingestão. Cada pergunta é um `goal` que ativa um conjunto de regras de Assessment. Defina esse conjunto em configuração, não em código espalhado.
 
@@ -254,7 +462,7 @@ Quando uma pergunta livre não puder ser respondida pelos Measurements existente
 
 ---
 
-## 8. Perfis de referência
+## 10. Perfis de referência
 
 Um perfil de referência é um artefato versionado contendo estatísticas agregadas de uma população conhecida, usado para comparação por métricas de drift (KS, PSI, Wasserstein).
 
@@ -264,7 +472,7 @@ Neste MVP, implemente a mecânica de comparação e **um** perfil derivado de fo
 
 ---
 
-## 9. API e frontend
+## 11. API e frontend
 
 **API:** FastAPI. Endpoints para upload, listagem de datasets, execuções, catálogo de capabilities, execução sob demanda, consulta das quatro camadas, cadeia de evidências de um item qualquer, registros de validação e métricas de rejeição.
 
@@ -287,7 +495,7 @@ Qualidade mínima não negociável: responsivo, foco de teclado visível, `prefe
 
 ---
 
-## 10. Testes
+## 12. Testes
 
 Além dos testes unitários por regra:
 
@@ -299,7 +507,7 @@ Além dos testes unitários por regra:
 
 ---
 
-## 11. O que NÃO construir neste MVP
+## 13. O que NÃO construir neste MVP
 
 Autenticação. Multi-tenancy. Registry distribuído de perfis. Marketplace de plugins. Hot reload. Sandbox de execução. Versionamento próprio de datasets. RAG sobre literatura. Agente autônomo. Kubernetes. Múltiplas filas. Score agregado de qualidade. Camadas de abstração DDD.
 
@@ -307,7 +515,7 @@ Se ao implementar algo você concluir que um destes itens é necessário, pare e
 
 ---
 
-## 12. Ordem de execução
+## 14. Ordem de execução
 
 Trabalhe nesta ordem e **pare ao final de cada etapa para eu revisar** antes de seguir para a próxima.
 
@@ -323,7 +531,3 @@ Trabalhe nesta ordem e **pare ao final de cada etapa para eu revisar** antes de 
 10. Suíte de defeitos injetados.
 
 Ao final da etapa 4, o projeto está vivo. Tudo antes disso é fundação; tudo depois é superfície.
-
----
-
-Comece pela etapa 1. Antes de escrever código, me mostre as decisões que você tomou sobre a derivação determinística de ID e sobre quais tipos de Measurement entram no conjunto inicial, e aguarde minha confirmação.
