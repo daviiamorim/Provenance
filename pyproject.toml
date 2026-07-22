@@ -1,0 +1,80 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "data-observatory"
+version = "0.1.0"
+description = "Evidence-chain analytics platform"
+requires-python = ">=3.12"
+dependencies = [
+    "jsonschema>=4.23",
+]
+
+[project.entry-points."data_observatory.plugins"]
+# Plugin entry-point group — implementations registered here by plugins in future stages.
+# Example: my_plugin = "my_package.plugin:MyPlugin"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11",
+    "ruff>=0.6",
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.112",
+    "pre-commit>=3.8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["core"]
+
+# ── Ruff ──────────────────────────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # docstrings — enforced by convention, not tooling
+    "ANN",     # type annotations — mypy handles these
+    "COM812",  # missing trailing comma — conflicts with ruff-format
+    "ISC001",  # implicit string concat — conflicts with ruff-format
+    "EM101",   # string literal in exception — concise error messages are fine
+    "EM102",   # f-string in exception
+    "TRY003",  # long exception messages
+    "TD",      # TODO/FIXME comments
+    "FIX",     # fixme markers
+    "TCH001",  # move import to TYPE_CHECKING — we need runtime types
+    "TCH002",
+    "TCH003",
+    "PLR0913", # too many arguments — factory methods legitimately need many
+    "RUF012",  # mutable class variable annotation — we use __init__ instead
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert — required by pytest
+    "PLR2004", # magic value comparisons — expected in test assertions
+    "SLF001",  # private member access — tests may inspect internals
+]
+
+# ── Mypy ──────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "jsonschema.*"
+ignore_missing_imports = true
+
+# ── Pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=core --cov-report=term-missing -q"
+
+[tool.coverage.run]
+source = ["core"]
+omit = ["tests/*"]
