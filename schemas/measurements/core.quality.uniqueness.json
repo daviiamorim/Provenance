@@ -9,23 +9,28 @@
     "total_count": {
       "type": "integer",
       "minimum": 0,
-      "description": "Total number of non-null values."
+      "description": "Total number of values (rows), including nulls. Consistent with core.quality.missing."
     },
     "unique_count": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of distinct values."
+      "description": "Number of distinct non-null values."
     },
     "duplicate_count": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of duplicate (non-unique) values."
+      "description": "Number of duplicate (non-unique) non-null values."
     },
     "unique_proportion": {
       "type": "number",
       "minimum": 0,
       "maximum": 1,
-      "description": "Fraction of values that are unique."
+      "description": "Fraction of non-null values that are unique."
+    },
+    "null_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of null values. Present only when null_count > 0."
     }
   }
 }

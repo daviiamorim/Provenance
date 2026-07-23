@@ -6,6 +6,7 @@ import hashlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 import pyarrow as pa
 import pyarrow.csv as pa_csv
@@ -37,6 +38,19 @@ __all__ = ["TabularDataset", "TabularPlugin"]
 _CSV_EXTENSIONS: frozenset[str] = frozenset({".csv", ".tsv"})
 _PARQUET_EXTENSIONS: frozenset[str] = frozenset({".parquet", ".pq"})
 _PARQUET_MAGIC = b"PAR1"
+
+DEFAULT_NULL_SENTINELS: Final[tuple[str, ...]] = (
+    "", "N/A", "NA", "NULL", "NaN", "None", "n/a", "na", "nan", "null"
+)
+
+_NUMERIC_DTYPES: Final[frozenset[str]] = frozenset({
+    "int8", "int16", "int32", "int64",
+    "uint8", "uint16", "uint32", "uint64",
+    "float", "float16", "float32", "float64", "double",
+    "decimal128", "decimal256",
+})
+
+_NORMALITY_N_CUTOFF: Final = 5000
 
 _CAPABILITY_TO_TYPE: dict[str, str] = {
     "tabular.column.missing": "core.quality.missing",
@@ -74,6 +88,19 @@ def _check_parquet_magic(path: Path) -> bool:
         return False
 
 
+def _require_numeric(ds: TabularDataset, *col_names: str) -> None:
+    """Raise TypeError if any of the named columns is not a numeric Arrow type."""
+    for col_name in col_names:
+        dtype = ds.column_dtype(col_name)
+        if dtype not in _NUMERIC_DTYPES:
+            raise TypeError(
+                f"Column {col_name!r} has Arrow type {dtype!r}; "
+                "this capability requires a numeric column. "
+                "If the column contains numeric values mixed with sentinel strings "
+                f"(e.g. 'N/A', ''), configure null_sentinels on TabularPlugin."
+            )
+
+
 @dataclass(frozen=True)
 class _ColumnInfo:
     name: str
@@ -96,11 +123,13 @@ class TabularDataset:
         schema: pa.Schema,
         *,
         is_parquet: bool,
+        null_sentinels: tuple[str, ...],
     ) -> None:
         self._source = source
         self._file_digests = file_digests
         self._schema = schema
         self._is_parquet = is_parquet
+        self._null_sentinels = null_sentinels
         self._dataset_id = derive_dataset_id(file_digests)
 
     # ── Dataset protocol ──────────────────────────────────────────────────────
@@ -112,6 +141,10 @@ class TabularDataset:
     @property
     def source(self) -> Source:
         return self._source
+
+    @property
+    def null_sentinels(self) -> tuple[str, ...]:
+        return self._null_sentinels
 
     def manifest(self) -> list[tuple[str, str]]:
         return list(self._file_digests)
@@ -150,9 +183,13 @@ class TabularDataset:
         return pa.chunked_array(chunks, type=self._schema.field(col_name).type)
 
     def _read_csv_column(self, col_name: str) -> pa.ChunkedArray:
+        convert_opts = pa_csv.ConvertOptions(
+            null_values=list(self._null_sentinels),
+            strings_can_be_null=True,
+        )
         chunks: list[pa.Array] = []
         for path in self._source.paths:
-            reader = pa_csv.open_csv(path)
+            reader = pa_csv.open_csv(path, convert_options=convert_opts)
             for batch in reader:
                 idx = batch.schema.get_field_index(col_name)
                 if idx >= 0:
@@ -171,6 +208,12 @@ class TabularPlugin:
 
     name: str = "tabular"
     version: str = "0.1.0"
+
+    def __init__(
+        self,
+        null_sentinels: tuple[str, ...] = DEFAULT_NULL_SENTINELS,
+    ) -> None:
+        self._null_sentinels = null_sentinels
 
     def sniff(self, source: Source) -> SniffResult:  # noqa: PLR0911
         if not source.paths:
@@ -236,12 +279,15 @@ class TabularPlugin:
             (str(p.name), _file_sha256(p)) for p in source.paths
         ]
 
-        schema = self._read_schema(source.paths, is_parquet=is_parquet)
+        schema = self._read_schema(
+            source.paths, is_parquet=is_parquet, null_sentinels=self._null_sentinels
+        )
         return TabularDataset(
             source,
             file_digests,
             schema,
             is_parquet=is_parquet,
+            null_sentinels=self._null_sentinels,
         )
 
     def catalog(self) -> Catalog:
@@ -377,11 +423,19 @@ class TabularPlugin:
     # ── private ───────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _read_schema(paths: tuple[Path, ...], *, is_parquet: bool) -> pa.Schema:
+    def _read_schema(
+        paths: tuple[Path, ...],
+        *,
+        is_parquet: bool,
+        null_sentinels: tuple[str, ...],
+    ) -> pa.Schema:
         if is_parquet:
             return pq.read_schema(paths[0])
-        # For CSV, open_csv reads enough rows to infer types
-        reader = pa_csv.open_csv(paths[0])
+        convert_opts = pa_csv.ConvertOptions(
+            null_values=list(null_sentinels),
+            strings_can_be_null=True,
+        )
+        reader = pa_csv.open_csv(paths[0], convert_options=convert_opts)
         return reader.schema
 
     @staticmethod
@@ -396,23 +450,28 @@ class TabularPlugin:
         ds: TabularDataset,
         params: dict[str, object],
     ) -> tuple[dict[str, object], Scope, dict[str, object], str]:
+        _sentinels_param: dict[str, object] = {
+            "null_sentinels": sorted(ds.null_sentinels)
+        }
+
         if capability_id == "tabular.column.missing":
             col_name = str(params["column"])
             col, dig = self._col_digest(ds, col_name)
             return (
                 compute_missing(col),
                 Scope(kind=ScopeKind.COLUMN, refs=(col_name,)),
-                {},
+                _sentinels_param,
                 dig,
             )
 
         if capability_id == "tabular.column.descriptive":
             col_name = str(params["column"])
+            _require_numeric(ds, col_name)
             col, dig = self._col_digest(ds, col_name)
             return (
                 compute_descriptive(col),
                 Scope(kind=ScopeKind.COLUMN, refs=(col_name,)),
-                {"quartile_method": "linear", "ddof": 1},
+                {**_sentinels_param, "quartile_method": "linear", "ddof": 1},
                 dig,
             )
 
@@ -422,7 +481,7 @@ class TabularPlugin:
             return (
                 compute_frequency(col),
                 Scope(kind=ScopeKind.COLUMN, refs=(col_name,)),
-                {},
+                _sentinels_param,
                 dig,
             )
 
@@ -432,17 +491,18 @@ class TabularPlugin:
             return (
                 compute_uniqueness(col),
                 Scope(kind=ScopeKind.COLUMN, refs=(col_name,)),
-                {},
+                _sentinels_param,
                 dig,
             )
 
         if capability_id == "tabular.column.normality":
             col_name = str(params["column"])
+            _require_numeric(ds, col_name)
             col, dig = self._col_digest(ds, col_name)
             return (
-                compute_normality(col),
+                compute_normality(col, n_cutoff=_NORMALITY_N_CUTOFF),
                 Scope(kind=ScopeKind.COLUMN, refs=(col_name,)),
-                {"test": "auto"},
+                {**_sentinels_param, "n_cutoff": _NORMALITY_N_CUTOFF},
                 dig,
             )
 
@@ -450,11 +510,12 @@ class TabularPlugin:
         col_a = str(params["column_a"])
         col_b = str(params["column_b"])
         method = str(params.get("method", "pearson"))
+        _require_numeric(ds, col_a, col_b)
         arr_a, dig_a = self._col_digest(ds, col_a)
         arr_b, dig_b = self._col_digest(ds, col_b)
         return (
             compute_correlation(arr_a, arr_b, method=method),
             Scope(kind=ScopeKind.PAIR, refs=(col_a, col_b)),
-            {"method": method, "missing": "pairwise"},
+            {**_sentinels_param, "method": method, "missing": "pairwise"},
             pair_digest(dig_a, dig_b),
         )

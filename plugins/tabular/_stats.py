@@ -8,6 +8,9 @@ and correlation (consistent with pairwise-deletion semantics).
 
 from __future__ import annotations
 
+import datetime
+import decimal
+import math
 from typing import Final
 
 import numpy as np
@@ -24,8 +27,6 @@ __all__ = [
     "compute_uniqueness",
 ]
 
-# Normality regime cutoff: Shapiro-Wilk for N ≤ this value, D'Agostino-Pearson above.
-_SHAPIRO_MAX_N: Final = 5000
 _NORMALITY_MIN_N: Final = 3
 _CORRELATION_MIN_N: Final = 2
 
@@ -45,6 +46,31 @@ def _valid_float64(
     """Drop Arrow-nulls AND float NaN, return float64 numpy array."""
     arr = _to_float64(array)
     return arr[~np.isnan(arr)]
+
+
+def _to_payload_value(v: object) -> object:  # noqa: PLR0911, C901
+    """Convert pyarrow .as_py() value to a JSON-serialisable form."""
+    if v is None or isinstance(v, bool | int | str):
+        return v
+    if isinstance(v, float):
+        if math.isnan(v):
+            return "NaN"
+        if math.isinf(v):
+            return "+Inf" if v > 0 else "-Inf"
+        return v
+    if isinstance(v, datetime.datetime):
+        return v.isoformat()
+    if isinstance(v, datetime.date):
+        return v.isoformat()
+    if isinstance(v, datetime.time):
+        return v.isoformat()
+    if isinstance(v, datetime.timedelta):
+        return int(v / datetime.timedelta(microseconds=1))
+    if isinstance(v, bytes):
+        return v.hex()
+    if isinstance(v, decimal.Decimal):
+        return str(v)
+    return str(v)
 
 
 # ── six capabilities ──────────────────────────────────────────────────────────
@@ -87,7 +113,7 @@ def compute_descriptive(
 def compute_frequency(
     column: pa.Array | pa.ChunkedArray,
 ) -> dict[str, object]:
-    """Frequency distribution for a column (nulls excluded from proportions)."""
+    """Frequency distribution (nulls excluded; temporals → ISO strings)."""
     total = len(column)
     null_count = column.null_count
     valid = column.drop_null()
@@ -95,7 +121,7 @@ def compute_frequency(
 
     vc = pc.value_counts(valid)
     # value_counts returns a StructArray with fields "values" and "counts"
-    py_values = vc.field("values").to_pylist()
+    py_values = [_to_payload_value(v) for v in vc.field("values").to_pylist()]
     py_counts = vc.field("counts").to_pylist()
     items = sorted(
         zip(py_values, py_counts, strict=False), key=lambda x: x[1], reverse=True
@@ -119,33 +145,47 @@ def compute_frequency(
 def compute_uniqueness(
     column: pa.Array | pa.ChunkedArray,
 ) -> dict[str, object]:
-    """Uniqueness metrics over non-null values."""
+    """Uniqueness metrics.
+
+    total_count is total rows including nulls — consistent with core.quality.missing.
+    unique_proportion is unique_count / non-null count.
+    null_count is emitted only when > 0.
+    """
+    total = len(column)
+    null_count = column.null_count
     valid = column.drop_null()
-    total = len(valid)  # schema: total_count = non-null count
+    valid_count = len(valid)
     unique = len(pc.unique(valid))
-    duplicate = total - unique
-    proportion = unique / total if total > 0 else 0.0
-    return {
+    duplicate = valid_count - unique
+    proportion = unique / valid_count if valid_count > 0 else 0.0
+    result: dict[str, object] = {
         "total_count": total,
         "unique_count": unique,
         "duplicate_count": duplicate,
         "unique_proportion": proportion,
     }
+    if null_count > 0:
+        result["null_count"] = null_count
+    return result
 
 
 def compute_normality(
     column: pa.Array | pa.ChunkedArray,
+    *,
+    n_cutoff: int = 5000,
 ) -> dict[str, object]:
-    """Normality test: Shapiro-Wilk for N≤5000, D'Agostino-Pearson for N>5000.
+    """Normality test driven by n_cutoff.
 
-    Arrow-nulls and float NaN are both treated as missing and excluded.
+    n <= n_cutoff → Shapiro-Wilk; n > n_cutoff → D'Agostino-Pearson.
+    Arrow-nulls and float NaN are both excluded.
+    n_cutoff must be passed by the caller and recorded in provenance params.
     """
     arr = _valid_float64(column)
     n = len(arr)
     if n < _NORMALITY_MIN_N:
         raise ValueError(f"Normality test requires at least 3 valid values, got {n}")
 
-    if n <= _SHAPIRO_MAX_N:
+    if n <= n_cutoff:
         stat, p = stats.shapiro(arr)
         test_name = "shapiro_wilk"
     else:
@@ -165,22 +205,16 @@ def compute_correlation(
     col_b: pa.Array | pa.ChunkedArray,
     method: str = "pearson",
 ) -> dict[str, object]:
-    """Pairwise correlation between two numeric columns.
-
-    Pairwise deletion: only rows where both columns are non-null AND non-NaN are
-    used.  Supported methods: pearson, spearman, kendall.
-    """
+    """Pairwise correlation between two numeric columns (pairwise deletion)."""
     if len(col_a) != len(col_b):
         raise ValueError(
             f"Columns must have the same length, got {len(col_a)} and {len(col_b)}"
         )
 
-    # Pairwise deletion mask: both Arrow-valid
     mask = pc.and_(pc.is_valid(col_a), pc.is_valid(col_b))
     a_valid = np.asarray(col_a.filter(mask), dtype=np.float64)
     b_valid = np.asarray(col_b.filter(mask), dtype=np.float64)
 
-    # Also drop rows where either has float NaN
     nan_mask = ~(np.isnan(a_valid) | np.isnan(b_valid))
     arr_a = a_valid[nan_mask]
     arr_b = b_valid[nan_mask]

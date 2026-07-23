@@ -8,17 +8,17 @@ edge cases, normality regime selection, and correlation symmetry.
 from __future__ import annotations
 
 import csv
+import datetime
 import io
 import math
-import struct
-import tempfile
 from pathlib import Path
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from core.model import CapabilityResult, Scope, ScopeKind
+from core.model import CapabilityResult, ScopeKind
 from core.plugin import SniffResult, Source
 from plugins.tabular import TabularDataset, TabularPlugin
 from plugins.tabular._digest import canonical_dtype, column_digest, pair_digest
@@ -98,9 +98,8 @@ class TestDigestAnchor:
         assert column_digest("int64", iter([1, 2, None])) == self.ANCHOR_INT64_1_2_NULL
 
     def test_string_anchor(self) -> None:
-        assert (
-            column_digest("string", iter(["a", None, "b"])) == self.ANCHOR_STRING_A_NULL_B
-        )
+        result = column_digest("string", iter(["a", None, "b"]))
+        assert result == self.ANCHOR_STRING_A_NULL_B
 
     def test_pair_digest_symmetric(self) -> None:
         dig_a = column_digest("int64", iter([1, 2, 3]))
@@ -376,8 +375,6 @@ class TestDescriptive:
         assert math.isclose(r["q75"], 3.25)  # type: ignore[arg-type]
 
     def test_std_is_sample(self) -> None:
-        import numpy as np
-
         col = pa.array([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0], type=pa.float64())
         r = compute_descriptive(col)
         expected = float(np.std([2, 4, 4, 4, 5, 5, 7, 9], ddof=1))
@@ -444,11 +441,18 @@ class TestUniqueness:
         assert r["unique_count"] == 1
         assert r["duplicate_count"] == 2
 
-    def test_nulls_excluded_from_total_count(self) -> None:
+    def test_total_count_includes_nulls(self) -> None:
         col = pa.array([1, None, 2, None], type=pa.int64())
         r = compute_uniqueness(col)
-        # total_count is non-null count per schema
-        assert r["total_count"] == 2
+        # total_count is all rows including nulls — consistent with core.quality.missing
+        assert r["total_count"] == 4
+        assert r["null_count"] == 2
+        assert r["unique_count"] == 2
+
+    def test_null_count_absent_when_no_nulls(self) -> None:
+        col = pa.array([1, 2, 3], type=pa.int64())
+        r = compute_uniqueness(col)
+        assert "null_count" not in r
 
     def test_proportion_correct(self) -> None:
         col = pa.array([1, 1, 2, 3], type=pa.int64())
@@ -462,8 +466,6 @@ class TestUniqueness:
 
 class TestNormality:
     def test_shapiro_for_small_sample(self) -> None:
-        import numpy as np
-
         rng = np.random.default_rng(42)
         data = rng.normal(0, 1, 100).tolist()
         col = pa.array(data, type=pa.float64())
@@ -473,8 +475,6 @@ class TestNormality:
         assert 0.0 <= r["p_value"] <= 1.0  # type: ignore[operator]
 
     def test_dagostino_for_large_sample(self) -> None:
-        import numpy as np
-
         rng = np.random.default_rng(0)
         data = rng.normal(0, 1, 6000).tolist()
         col = pa.array(data, type=pa.float64())
@@ -483,10 +483,8 @@ class TestNormality:
         assert r["sample_size"] == 6000
 
     def test_nulls_excluded(self) -> None:
-        import numpy as np
-
         rng = np.random.default_rng(7)
-        data: list[object] = [None, None] + rng.normal(0, 1, 50).tolist()
+        data: list[object] = [None, None, *rng.normal(0, 1, 50).tolist()]
         col = pa.array(data, type=pa.float64())
         r = compute_normality(col)
         assert r["sample_size"] == 50
@@ -497,9 +495,8 @@ class TestNormality:
             compute_normality(col)
 
     def test_statistic_is_float(self) -> None:
-        import numpy as np
-
-        col = pa.array(np.random.default_rng(1).normal(0, 1, 20).tolist(), type=pa.float64())
+        data = np.random.default_rng(1).normal(0, 1, 20).tolist()
+        col = pa.array(data, type=pa.float64())
         r = compute_normality(col)
         assert isinstance(r["statistic"], float)
         assert isinstance(r["p_value"], float)
@@ -557,8 +554,6 @@ class TestCorrelation:
         assert "p_value" in r
 
     def test_coefficient_in_range(self) -> None:
-        import numpy as np
-
         rng = np.random.default_rng(42)
         a = pa.array(rng.normal(0, 1, 50).tolist(), type=pa.float64())
         b = pa.array(rng.normal(0, 1, 50).tolist(), type=pa.float64())
@@ -661,8 +656,12 @@ class TestRunCapability:
             }),
         )
         ds = self.plugin.open(Source(paths=(p,)))
-        r_ab = self.plugin.run("tabular.pair.correlation", ds, column_a="x", column_b="y")
-        r_ba = self.plugin.run("tabular.pair.correlation", ds, column_a="y", column_b="x")
+        r_ab = self.plugin.run(
+            "tabular.pair.correlation", ds, column_a="x", column_b="y"
+        )
+        r_ba = self.plugin.run(
+            "tabular.pair.correlation", ds, column_a="y", column_b="x"
+        )
         assert r_ab.measurements[0].id == r_ba.measurements[0].id
 
     def test_provenance_producer(self, tmp_path: Path) -> None:
@@ -704,6 +703,47 @@ class TestRunCapability:
         )
         assert result.measurements[0].scope.kind == ScopeKind.PAIR
 
+    def test_normality_params_include_n_cutoff(self, tmp_path: Path) -> None:
+        ds = self._open_csv(tmp_path)
+        result = self.plugin.run("tabular.column.normality", ds, column="val")
+        prov = result.measurements[0].provenance
+        assert prov.params.get("n_cutoff") == 5000
+
+    def test_normality_params_include_null_sentinels(self, tmp_path: Path) -> None:
+        ds = self._open_csv(tmp_path)
+        result = self.plugin.run("tabular.column.normality", ds, column="val")
+        prov = result.measurements[0].provenance
+        assert "null_sentinels" in prov.params
+
+    def test_missing_params_include_null_sentinels(self, tmp_path: Path) -> None:
+        ds = self._open_csv(tmp_path)
+        result = self.plugin.run("tabular.column.missing", ds, column="val")
+        prov = result.measurements[0].provenance
+        assert "null_sentinels" in prov.params
+
+    def test_uniqueness_params_include_null_sentinels(self, tmp_path: Path) -> None:
+        ds = self._open_csv(tmp_path)
+        result = self.plugin.run("tabular.column.uniqueness", ds, column="val")
+        prov = result.measurements[0].provenance
+        assert "null_sentinels" in prov.params
+
+    def test_descriptive_rejects_string_column(self, tmp_path: Path) -> None:
+        ds = self._open_csv(tmp_path)
+        with pytest.raises(TypeError, match="numeric column"):
+            self.plugin.run("tabular.column.descriptive", ds, column="cat")
+
+    def test_normality_rejects_string_column(self, tmp_path: Path) -> None:
+        ds = self._open_csv(tmp_path)
+        with pytest.raises(TypeError, match="numeric column"):
+            self.plugin.run("tabular.column.normality", ds, column="cat")
+
+    def test_correlation_rejects_string_column(self, tmp_path: Path) -> None:
+        ds = self._open_csv(tmp_path)
+        with pytest.raises(TypeError, match="numeric column"):
+            self.plugin.run(
+                "tabular.pair.correlation", ds, column_a="val", column_b="cat"
+            )
+
     def _assert_valid_result(
         self, result: CapabilityResult, expected_type: str, expected_scope: ScopeKind
     ) -> None:
@@ -713,3 +753,121 @@ class TestRunCapability:
         assert msr.type == expected_type
         assert msr.scope.kind == expected_scope
         assert msr.id.startswith("msr-")
+
+
+# ── TestNullSentinels ─────────────────────────────────────────────────────────
+
+
+class TestNullSentinels:
+    """Verify that null_sentinels affect type inference, missing count, and params."""
+
+    def _csv_with_sentinels(self, tmp_path: Path) -> Path:
+        """CSV where 'score' column has sentinel strings that should become null."""
+        content = (
+            "id,score,label\n"
+            "1,85.0,pass\n2,N/A,fail\n3,,pass\n4,92.0,pass\n5,NA,fail\n"
+        )
+        p = tmp_path / "sentinels.csv"
+        p.write_text(content, encoding="utf-8")
+        return p
+
+    def test_sentinels_recognized_as_null(self, tmp_path: Path) -> None:
+        plugin = TabularPlugin()
+        p = self._csv_with_sentinels(tmp_path)
+        ds = plugin.open(Source(paths=(p,)))
+        result = plugin.run("tabular.column.missing", ds, column="score")
+        payload = dict(result.measurements[0].payload)
+        assert payload["total_count"] == 5
+        assert payload["missing_count"] == 3  # N/A, '', NA all become null
+        assert abs(payload["missing_proportion"] - 0.6) < 1e-9  # type: ignore[arg-type]
+
+    def test_sentinels_enable_numeric_inference(self, tmp_path: Path) -> None:
+        """Column mixing floats with sentinel strings must be inferred as float64."""
+        plugin = TabularPlugin()
+        p = self._csv_with_sentinels(tmp_path)
+        ds = plugin.open(Source(paths=(p,)))
+        dtype = ds.column_dtype("score")
+        # With sentinels converted to null, Arrow infers float64
+        assert dtype in {"float", "float16", "float32", "float64", "double"}
+
+    def test_missing_params_record_sentinels(self, tmp_path: Path) -> None:
+        plugin = TabularPlugin()
+        p = self._csv_with_sentinels(tmp_path)
+        ds = plugin.open(Source(paths=(p,)))
+        result = plugin.run("tabular.column.missing", ds, column="score")
+        prov = result.measurements[0].provenance
+        assert "null_sentinels" in prov.params
+        sentinels = prov.params["null_sentinels"]
+        assert "" in sentinels  # type: ignore[operator]
+        assert "N/A" in sentinels  # type: ignore[operator]
+
+    def test_custom_sentinels_override_default(self, tmp_path: Path) -> None:
+        """Plugin with empty sentinels tuple should not convert N/A to null."""
+        plugin_no_sentinels = TabularPlugin(null_sentinels=())
+        p = self._csv_with_sentinels(tmp_path)
+        ds = plugin_no_sentinels.open(Source(paths=(p,)))
+        result = plugin_no_sentinels.run("tabular.column.missing", ds, column="score")
+        payload = dict(result.measurements[0].payload)
+        # Without sentinels N/A and '' stay as-is, column stays string → 0 nulls
+        assert payload["missing_count"] == 0
+
+    def test_different_sentinels_different_msr_id(self, tmp_path: Path) -> None:
+        """Changing null_sentinels rotates the measurement id."""
+        plugin_default = TabularPlugin()
+        plugin_custom = TabularPlugin(null_sentinels=("MISSING",))
+        p = self._csv_with_sentinels(tmp_path)
+        ds_default = plugin_default.open(Source(paths=(p,)))
+        ds_custom = plugin_custom.open(Source(paths=(p,)))
+        r_default = plugin_default.run(
+            "tabular.column.missing", ds_default, column="score"
+        )
+        r_custom = plugin_custom.run(
+            "tabular.column.missing", ds_custom, column="score"
+        )
+        assert r_default.measurements[0].id != r_custom.measurements[0].id
+
+
+# ── TestFrequencyPayloadTypes ─────────────────────────────────────────────────
+
+
+class TestFrequencyPayloadTypes:
+    """Verify frequency payload values are JSON-serialisable (no Python reprs)."""
+
+    def test_date_values_are_iso_strings(self) -> None:
+        col = pa.array(
+            [
+                datetime.date(2024, 1, 15),
+                datetime.date(2024, 1, 15),
+                datetime.date(2024, 3, 1),
+            ],
+            type=pa.date32(),
+        )
+        r = compute_frequency(col)
+        for entry in r["frequencies"]:
+            val = entry["value"]
+            assert isinstance(val, str), f"Expected str, got {type(val)}"
+            datetime.date.fromisoformat(val)  # type: ignore[arg-type]
+
+    def test_datetime_values_are_iso_strings(self) -> None:
+        col = pa.array(
+            [
+                datetime.datetime(2024, 1, 15, 10, 30),  # noqa: DTZ001
+                datetime.datetime(2024, 1, 15, 10, 30),  # noqa: DTZ001
+            ],
+            type=pa.timestamp("us"),
+        )
+        r = compute_frequency(col)
+        for entry in r["frequencies"]:
+            assert isinstance(entry["value"], str)
+
+    def test_float_nan_becomes_string(self) -> None:
+        col = pa.array([float("nan"), float("nan"), 1.0], type=pa.float64())
+        r = compute_frequency(col)
+        values = [e["value"] for e in r["frequencies"]]
+        assert "NaN" in values
+
+    def test_bytes_become_hex_string(self) -> None:
+        col = pa.array([b"\xde\xad", b"\xbe\xef", b"\xde\xad"], type=pa.binary())
+        r = compute_frequency(col)
+        for entry in r["frequencies"]:
+            assert isinstance(entry["value"], str)

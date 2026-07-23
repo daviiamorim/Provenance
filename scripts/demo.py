@@ -114,7 +114,7 @@ def _build_pairs(numeric_names: list[str]) -> list[tuple[str, str]]:
     return pairs
 
 
-def main() -> None:  # noqa: C901
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
     if len(sys.argv) != 2:  # noqa: PLR2004
         print(f"usage: python {sys.argv[0]} <file.csv|file.parquet>", file=sys.stderr)
         sys.exit(1)
@@ -181,6 +181,21 @@ def main() -> None:  # noqa: C901
             print(f"  (showing {_MAX_CORR_PAIRS} of {len(pairs)} correlation pairs)")
         for a, b in pairs[:_MAX_CORR_PAIRS]:
             _run(plugin, ds, "tabular.pair.correlation", column_a=a, column_b=b)
+
+    # ── note: skipped columns ─────────────────────────────────────────────────
+    non_numeric = [c for c in cols if not _is_numeric(c)]
+    if non_numeric:
+        print()
+        print("NOTE — the following columns were not analysed by numeric capabilities")
+        print("       (descriptive, normality, correlation) because Arrow inferred")
+        print("       them as non-numeric types:")
+        for c in non_numeric:
+            print(f"  {c.name:<28} {c.dtype_str}")
+        print()
+        print("  If any of these should be numeric but contain sentinel strings")
+        print("  such as 'N/A', 'NA', or '' for missing values, re-open with")
+        print("  custom null_sentinels:")
+        print("    plugin = TabularPlugin(null_sentinels=('', 'N/A', 'NA', ...))")
 
     print()
     print(_SEP)
