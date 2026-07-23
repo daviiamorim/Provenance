@@ -9,11 +9,13 @@ description = "Evidence-chain analytics platform"
 requires-python = ">=3.12"
 dependencies = [
     "jsonschema>=4.23",
+    "pyarrow>=17,<19",
+    "numpy>=2.0",
+    "scipy>=1.14",
 ]
 
 [project.entry-points."data_observatory.plugins"]
-# Plugin entry-point group — implementations registered here by plugins in future stages.
-# Example: my_plugin = "my_package.plugin:MyPlugin"
+tabular = "plugins.tabular:TabularPlugin"
 
 [dependency-groups]
 dev = [
@@ -26,7 +28,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["core"]
+packages = ["core", "plugins"]
 
 # ── Ruff ──────────────────────────────────────────────────────────────────────
 [tool.ruff]
@@ -70,11 +72,19 @@ warn_unused_configs = true
 module = "jsonschema.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "scipy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
+
 # ── Pytest ────────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=core --cov-report=term-missing -q"
+addopts = "--cov=core --cov=plugins --cov-report=term-missing -q"
 
 [tool.coverage.run]
-source = ["core"]
+source = ["core", "plugins"]
 omit = ["tests/*"]
