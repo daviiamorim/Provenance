@@ -60,6 +60,11 @@ ignore = [
     "PLR2004", # magic value comparisons — expected in test assertions
     "SLF001",  # private member access — tests may inspect internals
 ]
+"scripts/**" = [
+    "T201",   # print — expected in CLI scripts
+    "BLE001", # broad exception catch — intentional for graceful demo output
+    "INP001", # implicit namespace package — scripts/ has no __init__.py
+]
 
 # ── Mypy ──────────────────────────────────────────────────────────────────────
 [tool.mypy]
