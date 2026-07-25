@@ -12,6 +12,7 @@ import datetime
 import io
 import math
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pyarrow as pa
@@ -334,7 +335,7 @@ class TestMissing:
         result = compute_missing(col)
         assert result["total_count"] == 4
         assert result["missing_count"] == 2
-        assert math.isclose(result["missing_proportion"], 0.5)  # type: ignore[arg-type]
+        assert math.isclose(cast("float", result["missing_proportion"]), 0.5)
 
     def test_empty_column(self) -> None:
         col = pa.array([], type=pa.int64())
@@ -351,7 +352,7 @@ class TestDescriptive:
         col = pa.array([1.0, 2.0, 3.0, 4.0, 5.0], type=pa.float64())
         r = compute_descriptive(col)
         assert r["count"] == 5
-        assert math.isclose(r["mean"], 3.0)  # type: ignore[arg-type]
+        assert math.isclose(cast("float", r["mean"]), 3.0)
         assert r["min"] == 1.0
         assert r["max"] == 5.0
         assert r["null_count"] == 0
@@ -371,15 +372,15 @@ class TestDescriptive:
         # [1,2,3,4] → q25=1.75, q50=2.5, q75=3.25 with linear method
         col = pa.array([1.0, 2.0, 3.0, 4.0], type=pa.float64())
         r = compute_descriptive(col)
-        assert math.isclose(r["q25"], 1.75)  # type: ignore[arg-type]
-        assert math.isclose(r["q50"], 2.5)  # type: ignore[arg-type]
-        assert math.isclose(r["q75"], 3.25)  # type: ignore[arg-type]
+        assert math.isclose(cast("float", r["q25"]), 1.75)
+        assert math.isclose(cast("float", r["q50"]), 2.5)
+        assert math.isclose(cast("float", r["q75"]), 3.25)
 
     def test_std_is_sample(self) -> None:
         col = pa.array([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0], type=pa.float64())
         r = compute_descriptive(col)
         expected = float(np.std([2, 4, 4, 4, 5, 5, 7, 9], ddof=1))
-        assert math.isclose(r["std"], expected)  # type: ignore[arg-type]
+        assert math.isclose(cast("float", r["std"]), expected)
 
     def test_fully_null_raises(self) -> None:
         col = pa.array([None, None], type=pa.float64())
@@ -404,7 +405,8 @@ class TestFrequency:
     def test_proportions_sum_to_one(self) -> None:
         col = pa.array(["x", "y", "x", "z", "y", "x"], type=pa.string())
         r = compute_frequency(col)
-        total = sum(item["proportion"] for item in r["frequencies"])
+        freqs = cast("list[dict[str, object]]", r["frequencies"])
+        total = sum(cast("float", item["proportion"]) for item in freqs)
         assert math.isclose(total, 1.0)
 
     def test_null_count_present_when_nulls(self) -> None:
@@ -420,8 +422,9 @@ class TestFrequency:
     def test_nulls_excluded_from_proportions(self) -> None:
         col = pa.array(["a", "a", None], type=pa.string())
         r = compute_frequency(col)
-        assert len(r["frequencies"]) == 1
-        assert r["frequencies"][0]["proportion"] == 1.0
+        freqs = cast("list[dict[str, object]]", r["frequencies"])
+        assert len(freqs) == 1
+        assert freqs[0]["proportion"] == 1.0
 
 
 # ── TestUniqueness ────────────────────────────────────────────────────────────
@@ -459,7 +462,7 @@ class TestUniqueness:
         col = pa.array([1, 1, 2, 3], type=pa.int64())
         r = compute_uniqueness(col)
         # 3 unique out of 4 non-null
-        assert math.isclose(r["unique_proportion"], 3 / 4)
+        assert math.isclose(cast("float", r["unique_proportion"]), 3 / 4)
 
 
 # ── TestNormality ─────────────────────────────────────────────────────────────
@@ -473,7 +476,7 @@ class TestNormality:
         r = compute_normality(col)
         assert r["test"] == "shapiro_wilk"
         assert r["sample_size"] == 100
-        assert 0.0 <= r["p_value"] <= 1.0  # type: ignore[operator]
+        assert 0.0 <= cast("float", r["p_value"]) <= 1.0
 
     def test_dagostino_for_large_sample(self) -> None:
         rng = np.random.default_rng(0)
@@ -510,13 +513,13 @@ class TestCorrelation:
     def test_perfect_positive(self) -> None:
         a = pa.array([1.0, 2.0, 3.0, 4.0, 5.0], type=pa.float64())
         r = compute_correlation(a, a)
-        assert math.isclose(r["coefficient"], 1.0, abs_tol=1e-9)
+        assert math.isclose(cast("float", r["coefficient"]), 1.0, abs_tol=1e-9)
 
     def test_perfect_negative(self) -> None:
         a = pa.array([1.0, 2.0, 3.0], type=pa.float64())
         b = pa.array([3.0, 2.0, 1.0], type=pa.float64())
         r = compute_correlation(a, b)
-        assert math.isclose(r["coefficient"], -1.0, abs_tol=1e-9)
+        assert math.isclose(cast("float", r["coefficient"]), -1.0, abs_tol=1e-9)
 
     def test_pairwise_deletion(self) -> None:
         # Row 2 has null in b — should be excluded
@@ -530,7 +533,7 @@ class TestCorrelation:
         b = pa.array([1.0, 2.0, 3.0, 4.0], type=pa.float64())
         r = compute_correlation(a, b, method="spearman")
         assert r["method"] == "spearman"
-        assert math.isclose(r["coefficient"], 1.0, abs_tol=1e-9)
+        assert math.isclose(cast("float", r["coefficient"]), 1.0, abs_tol=1e-9)
 
     def test_kendall_method(self) -> None:
         a = pa.array([1.0, 2.0, 3.0, 4.0], type=pa.float64())
@@ -559,7 +562,7 @@ class TestCorrelation:
         a = pa.array(rng.normal(0, 1, 50).tolist(), type=pa.float64())
         b = pa.array(rng.normal(0, 1, 50).tolist(), type=pa.float64())
         r = compute_correlation(a, b)
-        assert -1.0 <= r["coefficient"] <= 1.0  # type: ignore[operator]
+        assert -1.0 <= cast("float", r["coefficient"]) <= 1.0
 
 
 # ── TestRunCapability ─────────────────────────────────────────────────────────
@@ -590,7 +593,7 @@ class TestRunCapability:
         self._assert_valid_result(result, "core.stats.descriptive", ScopeKind.COLUMN)
         payload = dict(result.measurements[0].payload)
         assert payload["count"] == 5
-        assert math.isclose(payload["mean"], 3.0)  # type: ignore[arg-type]
+        assert math.isclose(cast("float", payload["mean"]), 3.0)
 
     def test_frequency_csv(self, tmp_path: Path) -> None:
         ds = self._open_csv(tmp_path)
@@ -687,7 +690,7 @@ class TestRunCapability:
                 return []
 
         with pytest.raises(TypeError, match="TabularDataset"):
-            self.plugin.run("tabular.column.missing", _FakeDataset(), column="x")  # type: ignore[arg-type]
+            self.plugin.run("tabular.column.missing", _FakeDataset(), column="x")
 
     def test_missing_column_param_raises(self, tmp_path: Path) -> None:
         ds = self._open_csv(tmp_path)
@@ -781,7 +784,7 @@ class TestNullSentinels:
         payload = dict(result.measurements[0].payload)
         assert payload["total_count"] == 5
         assert payload["missing_count"] == 3  # N/A, '', NA all become null
-        assert abs(payload["missing_proportion"] - 0.6) < 1e-9  # type: ignore[arg-type]
+        assert abs(cast("float", payload["missing_proportion"]) - 0.6) < 1e-9
 
     def test_sentinels_enable_numeric_inference(self, tmp_path: Path) -> None:
         """Column mixing floats with sentinel strings must be inferred as float64."""
@@ -799,9 +802,9 @@ class TestNullSentinels:
         result = plugin.run("tabular.column.missing", ds, column="score")
         prov = result.measurements[0].provenance
         assert "null_sentinels" in prov.params
-        sentinels = prov.params["null_sentinels"]
-        assert "" in sentinels  # type: ignore[operator]
-        assert "N/A" in sentinels  # type: ignore[operator]
+        sentinels = cast("tuple[str, ...]", prov.params["null_sentinels"])
+        assert "" in sentinels
+        assert "N/A" in sentinels
 
     def test_custom_sentinels_override_default(self, tmp_path: Path) -> None:
         """Plugin with empty sentinels tuple should not convert N/A to null."""
@@ -845,10 +848,10 @@ class TestFrequencyPayloadTypes:
             type=pa.date32(),
         )
         r = compute_frequency(col)
-        for entry in r["frequencies"]:
+        for entry in cast("list[dict[str, object]]", r["frequencies"]):
             val = entry["value"]
             assert isinstance(val, str), f"Expected str, got {type(val)}"
-            datetime.date.fromisoformat(val)  # type: ignore[arg-type]
+            datetime.date.fromisoformat(val)
 
     def test_datetime_values_are_iso_strings(self) -> None:
         col = pa.array(
@@ -859,17 +862,17 @@ class TestFrequencyPayloadTypes:
             type=pa.timestamp("us"),
         )
         r = compute_frequency(col)
-        for entry in r["frequencies"]:
+        for entry in cast("list[dict[str, object]]", r["frequencies"]):
             assert isinstance(entry["value"], str)
 
     def test_float_nan_becomes_string(self) -> None:
         col = pa.array([float("nan"), float("nan"), 1.0], type=pa.float64())
         r = compute_frequency(col)
-        values = [e["value"] for e in r["frequencies"]]
+        values = [e["value"] for e in cast("list[dict[str, object]]", r["frequencies"])]
         assert "NaN" in values
 
     def test_bytes_become_hex_string(self) -> None:
         col = pa.array([b"\xde\xad", b"\xbe\xef", b"\xde\xad"], type=pa.binary())
         r = compute_frequency(col)
-        for entry in r["frequencies"]:
+        for entry in cast("list[dict[str, object]]", r["frequencies"]):
             assert isinstance(entry["value"], str)
