@@ -1,14 +1,24 @@
+# Uses local project tools (uv run ...) so pre-commit is identical to CI.
+# No version pinning here — the project's pyproject.toml pins the tools.
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.0
+  - repo: local
     hooks:
-      - id: ruff
+      - id: ruff-lint
+        name: ruff (lint)
+        entry: uv run ruff check
         args: [--fix]
-      - id: ruff-format
+        language: system
+        types_or: [python, pyi]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.11.0
-    hooks:
+      - id: ruff-format
+        name: ruff (format)
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+
       - id: mypy
-        additional_dependencies:
-          - jsonschema>=4.23
+        name: mypy
+        entry: uv run mypy
+        args: [core, tests]
+        language: system
+        pass_filenames: false

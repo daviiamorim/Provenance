@@ -39,10 +39,7 @@ from core.model import (
 # Brazilian format: "1.234,56" | "7,6" | "912" — period is thousands separator,
 # comma is decimal separator.
 _BR_NUM_RE: re.Pattern[str] = re.compile(
-    r"(?<!\w)"
-    r"(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)"
-    r"(\s*%)?"
-    r"(?!\w)"
+    r"(?<!\w)" r"(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)" r"(\s*%)?" r"(?!\w)"
 )
 
 

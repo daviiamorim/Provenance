@@ -17,6 +17,9 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from collections.abc import Mapping
+from typing import cast
+
 from core.composer import ReportResult, generate_report
 from core.llm import StubLanguageModel
 from core.model import Assessment, Finding, Measurement
@@ -77,11 +80,8 @@ def _sev(sev: object) -> str:
 # ── measurement formatting ────────────────────────────────────────────────────
 
 
-def _fmt_payload(payload: object) -> None:
-    if not hasattr(payload, "items"):
-        print(f"    {payload}")
-        return
-    for k, v in payload.items():  # type: ignore[union-attr]
+def _fmt_payload(payload: Mapping[str, object]) -> None:
+    for k, v in payload.items():
         if isinstance(v, list):
             print(f"    {k}: [{len(v)} entries]")
             for item in v[:_FREQ_PREVIEW]:
@@ -177,11 +177,11 @@ def _make_claim_sentence(f: Finding) -> str:
     """Return a demo Portuguese sentence citing f, numbers in Brazilian format."""
     col = f.scope.refs[0] if f.scope.refs else "dataset"
     if f.type == "core.finding.missing_rate":
-        rate = float(f.params.get("missing_proportion", 0))
+        rate = cast("float", f.params.get("missing_proportion", 0.0))
         pct_br = f"{rate * 100:.1f}".replace(".", ",")
         return f"A coluna {col} tem {pct_br}% de valores ausentes [{f.id}]."
     if f.type == "core.finding.duplicate_rate":
-        rate = float(f.params.get("duplicate_proportion", 0))
+        rate = cast("float", f.params.get("duplicate_proportion", 0.0))
         pct_br = f"{rate * 100:.1f}".replace(".", ",")
         return f"O dataset apresenta {pct_br}% de linhas duplicadas [{f.id}]."
     return f"Foi identificado achado '{f.type.split('.')[-1]}' [{f.id}]."

@@ -1,0 +1,3 @@
+# Normalize all text files to LF in the repository and on checkout.
+# Overrides core.autocrlf so ruff, mypy, and pre-commit see consistent endings.
+* text=auto eol=lf
