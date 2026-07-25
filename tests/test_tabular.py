@@ -285,8 +285,8 @@ class TestCatalog:
         self.plugin = TabularPlugin()
         self.catalog = self.plugin.catalog()
 
-    def test_six_capabilities(self) -> None:
-        assert len(self.catalog.capabilities) == 6
+    def test_seven_capabilities(self) -> None:
+        assert len(self.catalog.capabilities) == 7
 
     def test_capability_ids(self) -> None:
         ids = {c.id for c in self.catalog.capabilities}
@@ -296,6 +296,7 @@ class TestCatalog:
         assert "tabular.column.uniqueness" in ids
         assert "tabular.column.normality" in ids
         assert "tabular.pair.correlation" in ids
+        assert "tabular.dataset.row_dedup" in ids
 
     def test_all_capabilities_cheap(self) -> None:
         for cap in self.catalog.capabilities:

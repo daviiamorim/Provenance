@@ -28,6 +28,7 @@ from plugins.tabular._stats import (
     compute_frequency,
     compute_missing,
     compute_normality,
+    compute_row_dedup,
     compute_uniqueness,
 )
 
@@ -59,6 +60,7 @@ _CAPABILITY_TO_TYPE: dict[str, str] = {
     "tabular.column.uniqueness": "core.quality.uniqueness",
     "tabular.column.normality": "core.stats.normality",
     "tabular.pair.correlation": "core.stats.correlation",
+    "tabular.dataset.row_dedup": "core.quality.row_dedup",
 }
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -195,6 +197,25 @@ class TabularDataset:
                 if idx >= 0:
                     chunks.append(batch.column(idx))
         return pa.chunked_array(chunks)
+
+    def table(self) -> pa.Table:
+        """Load the full table (all columns) from all source files.
+
+        Used by dataset-level capabilities that need all columns simultaneously.
+        For column-level access, prefer column_array() to avoid loading unused columns.
+        """
+        if self._is_parquet:
+            parts = [pq.read_table(path) for path in self._source.paths]
+        else:
+            convert_opts = pa_csv.ConvertOptions(
+                null_values=list(self._null_sentinels),
+                strings_can_be_null=True,
+            )
+            parts = [
+                pa_csv.open_csv(path, convert_options=convert_opts).read_all()
+                for path in self._source.paths
+            ]
+        return pa.concat_tables(parts) if len(parts) > 1 else parts[0]
 
 
 # ── TabularPlugin ─────────────────────────────────────────────────────────────
@@ -372,6 +393,22 @@ class TabularPlugin:
                     renders=False,
                     cost="cheap",
                 ),
+                Capability(
+                    id="tabular.dataset.row_dedup",
+                    description=(
+                        "Row-level deduplication: counts rows whose combination of "
+                        "all column values has already appeared. Scope is DATASET. "
+                        "Streams through data in Arrow batches — O(unique_rows) memory."
+                    ),
+                    params_schema={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                    produces=("core.quality.row_dedup",),
+                    renders=False,
+                    cost="cheap",
+                ),
             ),
             measurement_types=(
                 "core.quality.missing",
@@ -380,6 +417,7 @@ class TabularPlugin:
                 "core.quality.uniqueness",
                 "core.stats.normality",
                 "core.stats.correlation",
+                "core.quality.row_dedup",
             ),
         )
 
@@ -444,7 +482,7 @@ class TabularPlugin:
         dig = column_digest(ds.column_dtype(col_name), iter(col.to_pylist()))
         return col, dig
 
-    def _dispatch(
+    def _dispatch(  # noqa: PLR0911
         self,
         capability_id: str,
         ds: TabularDataset,
@@ -504,6 +542,15 @@ class TabularPlugin:
                 Scope(kind=ScopeKind.COLUMN, refs=(col_name,)),
                 {**_sentinels_param, "n_cutoff": _NORMALITY_N_CUTOFF},
                 dig,
+            )
+
+        if capability_id == "tabular.dataset.row_dedup":
+            payload, input_dig = compute_row_dedup(ds.table())
+            return (
+                payload,
+                Scope(kind=ScopeKind.DATASET, refs=(ds.dataset_id,)),
+                {},
+                input_dig,
             )
 
         # tabular.pair.correlation

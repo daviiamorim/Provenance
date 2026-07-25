@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import hashlib
 import math
+from collections import Counter
 from typing import Final
 
 import numpy as np
@@ -18,17 +20,23 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from scipy import stats
 
+from core.model import canonical_json
+from plugins.tabular._digest import _to_canonical
+
 __all__ = [
     "compute_correlation",
     "compute_descriptive",
     "compute_frequency",
     "compute_missing",
     "compute_normality",
+    "compute_row_dedup",
     "compute_uniqueness",
 ]
 
 _NORMALITY_MIN_N: Final = 3
 _CORRELATION_MIN_N: Final = 2
+_SKEWNESS_MIN_N: Final = 3
+_KURTOSIS_MIN_N: Final = 4
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -114,9 +122,9 @@ def compute_descriptive(
         "q75": float(np.quantile(arr, 0.75, method="linear")),
         "null_count": column.null_count,
     }
-    if len(arr) >= 3:
+    if len(arr) >= _SKEWNESS_MIN_N:
         result["skewness"] = float(stats.skew(arr))
-    if len(arr) >= 4:
+    if len(arr) >= _KURTOSIS_MIN_N:
         result["excess_kurtosis"] = float(stats.kurtosis(arr))
     return result
 
@@ -251,3 +259,42 @@ def compute_correlation(
         "p_value": float(result.pvalue),
         "sample_size": n,
     }
+
+
+def compute_row_dedup(table: pa.Table) -> tuple[dict[str, object], str]:
+    """Row-level deduplication — streams through Arrow batches, never loads all data.
+
+    Returns (payload, input_digest) in a single pass.
+
+    Memory: O(unique_rows x 32 bytes) for the hash counter.  Raw row values are
+    discarded after each row is hashed.
+
+    input_digest: SHA-256 of the ordered sequence of canonical row JSON strings.
+    This reflects the logical table content (parsed values), not raw file bytes, so
+    it is stable across different CSV encodings of the same data.
+    """
+    col_names = table.schema.names
+    hash_counts: Counter[str] = Counter()
+    table_hasher = hashlib.sha256()
+
+    for batch in table.to_batches():
+        columns = [batch.column(i) for i in range(batch.num_columns)]
+        for row_idx in range(batch.num_rows):
+            row: dict[str, object] = {
+                name: _to_canonical(col[row_idx].as_py())
+                for name, col in zip(col_names, columns, strict=False)
+            }
+            row_bytes = canonical_json(row)
+            hash_counts[hashlib.sha256(row_bytes).hexdigest()] += 1
+            table_hasher.update(row_bytes + b"\n")
+
+    total = sum(hash_counts.values())
+    unique = len(hash_counts)
+    duplicate = total - unique
+    payload: dict[str, object] = {
+        "total_rows": total,
+        "unique_rows": unique,
+        "duplicate_rows": duplicate,
+        "duplicate_proportion": duplicate / total if total > 0 else 0.0,
+    }
+    return payload, table_hasher.hexdigest()

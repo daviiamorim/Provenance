@@ -226,6 +226,9 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
         for cap_id in ("tabular.column.descriptive", "tabular.column.normality"):
             all_measurements.extend(_run(plugin, ds, cap_id, column=col_name))
 
+    # ── dataset-level capabilities ────────────────────────────────────────────
+    all_measurements.extend(_run(plugin, ds, "tabular.dataset.row_dedup"))
+
     # ── pairwise correlation ──────────────────────────────────────────────────
     pairs = _build_pairs(numeric_names)
     if pairs:

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "core.quality.row_dedup",
+  "description": "Row-level deduplication metrics for a dataset. A duplicate row is a row whose combination of all column values has already appeared in the dataset. Scope is always DATASET.",
+  "type": "object",
+  "required": ["total_rows", "unique_rows", "duplicate_rows", "duplicate_proportion"],
+  "additionalProperties": false,
+  "properties": {
+    "total_rows": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of rows processed."
+    },
+    "unique_rows": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of rows with a distinct combination of all column values."
+    },
+    "duplicate_rows": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of excess rows: total_rows - unique_rows. These are the rows that could be dropped without losing any information."
+    },
+    "duplicate_proportion": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "duplicate_rows / total_rows."
+    }
+  }
+}

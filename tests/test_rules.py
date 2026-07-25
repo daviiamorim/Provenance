@@ -188,6 +188,21 @@ def _correlation_msr(col_a: str, col_b: str, *, r: float, n: int) -> Measurement
     )
 
 
+def _row_dedup_msr(*, total: int, unique: int, duplicate: int) -> Measurement:
+    return Measurement.create(
+        dataset_id=DATASET_ID,
+        type="core.quality.row_dedup",
+        scope=Scope(kind=ScopeKind.DATASET, refs=(DATASET_ID,)),
+        payload={
+            "total_rows": total,
+            "unique_rows": unique,
+            "duplicate_rows": duplicate,
+            "duplicate_proportion": duplicate / total if total > 0 else 0.0,
+        },
+        provenance=_prov(),
+    )
+
+
 def _run_finding_rule(rule_cls: type, measurements: list[Measurement]) -> list[Finding]:
     return rule_cls().evaluate(DATASET_ID, measurements)  # type: ignore[no-any-return]
 
@@ -482,47 +497,65 @@ class TestCategoryBalanceRule:
 
 
 class TestDuplicateRateRule:
+    """DuplicateRateRule consumes core.quality.row_dedup (scope=DATASET).
+
+    It counts entire rows that are exact duplicates of another row in the
+    dataset.  Column-level uniqueness (core.quality.uniqueness) is a different
+    metric — value repetition inside one column is normal for categorical data
+    and is not consumed here.
+    """
+
     rule = DuplicateRateRule()
 
-    def test_zero_duplicates_gives_ok(self) -> None:
-        m = _uniqueness_msr("id", total=100, unique=100, duplicates=0)
+    def test_zero_duplicate_rows_gives_ok(self) -> None:
+        m = _row_dedup_msr(total=100, unique=100, duplicate=0)
         f = self.rule.evaluate(DATASET_ID, [m])[0]
         assert f.severity == Severity.OK
 
-    def test_low_duplicate_rate_gives_warn(self) -> None:
-        m = _uniqueness_msr("id", total=100, unique=99, duplicates=1)
+    def test_low_duplicate_row_rate_gives_warn(self) -> None:
+        m = _row_dedup_msr(total=100, unique=99, duplicate=1)
         f = self.rule.evaluate(DATASET_ID, [m])[0]
         assert f.severity == Severity.WARN
 
-    def test_high_duplicate_rate_gives_fail(self) -> None:
-        m = _uniqueness_msr("id", total=100, unique=90, duplicates=10)
+    def test_high_duplicate_row_rate_gives_fail(self) -> None:
+        m = _row_dedup_msr(total=100, unique=90, duplicate=10)
         f = self.rule.evaluate(DATASET_ID, [m])[0]
         assert f.severity == Severity.FAIL
 
     def test_boundary_exactly_at_1pct_is_warn(self) -> None:
-        m = _uniqueness_msr("x", total=100, unique=99, duplicates=1)
+        m = _row_dedup_msr(total=100, unique=99, duplicate=1)
         f = self.rule.evaluate(DATASET_ID, [m])[0]
         assert f.severity == Severity.WARN
 
     def test_boundary_just_above_1pct_is_fail(self) -> None:
-        m = _uniqueness_msr("x", total=100, unique=98, duplicates=2)
+        m = _row_dedup_msr(total=100, unique=98, duplicate=2)
         f = self.rule.evaluate(DATASET_ID, [m])[0]
         assert f.severity == Severity.FAIL
 
     def test_always_emits_even_for_ok(self) -> None:
         """ok Finding is positive evidence that the check passed."""
-        m = _uniqueness_msr("id", total=50, unique=50, duplicates=0)
-        findings = self.rule.evaluate(DATASET_ID, [m])
-        assert len(findings) == 1
+        m = _row_dedup_msr(total=50, unique=50, duplicate=0)
+        assert len(self.rule.evaluate(DATASET_ID, [m])) == 1
+
+    def test_finding_scope_is_dataset(self) -> None:
+        """Row-level dedup is a dataset property, not a column property."""
+        m = _row_dedup_msr(total=100, unique=95, duplicate=5)
+        f = self.rule.evaluate(DATASET_ID, [m])[0]
+        assert f.scope.kind == ScopeKind.DATASET
+
+    def test_column_uniqueness_measurement_is_ignored(self) -> None:
+        """core.quality.uniqueness is column-level; must not trigger F4."""
+        m = _uniqueness_msr("categoria", total=100, unique=3, duplicates=97)
+        assert self.rule.evaluate(DATASET_ID, [m]) == []
 
     def test_threshold_visible_in_params(self) -> None:
-        m = _uniqueness_msr("id", total=100, unique=95, duplicates=5)
+        m = _row_dedup_msr(total=100, unique=95, duplicate=5)
         f = self.rule.evaluate(DATASET_ID, [m])[0]
         assert "warn_threshold" in f.params
         assert "duplicate_rate" in f.params
 
     def test_determinism(self) -> None:
-        m = _uniqueness_msr("id", total=100, unique=95, duplicates=5)
+        m = _row_dedup_msr(total=100, unique=95, duplicate=5)
         f1 = self.rule.evaluate(DATASET_ID, [m])[0]
         f2 = self.rule.evaluate(DATASET_ID, [m])[0]
         assert f1.id == f2.id
@@ -771,7 +804,7 @@ class TestRuleRegistry:
     def test_run_findings_end_to_end(self) -> None:
         measurements = [
             _missing_msr("age", total=100, missing=0),
-            _uniqueness_msr("age", total=100, unique=95, duplicates=5),
+            _row_dedup_msr(total=100, unique=95, duplicate=5),
         ]
         findings = RULE_REGISTRY.run_findings(DATASET_ID, measurements)
         types = {f.type for f in findings}
