@@ -89,7 +89,9 @@ def _measurement(
     )
 
 
-def _finding(msr_id: str = "msr-" + "a" * 32, params: dict[str, object] | None = None) -> Finding:
+def _finding(
+    msr_id: str = "msr-" + "a" * 32, params: dict[str, object] | None = None
+) -> Finding:
     return Finding.create(
         dataset_id="dset-abc",
         type="core.finding.completeness",
@@ -317,7 +319,7 @@ class TestDeterminism:
         assert f1.id != f2.id
 
     def test_finding_empty_params_same_id_as_default(self) -> None:
-        """Empty params dict is the canonical default; two identical findings must match."""
+        """Empty params dict is the canonical default; identical findings must match."""
         msr_id = _measurement().id
         assert _finding(msr_id).id == _finding(msr_id).id
 

@@ -34,18 +34,31 @@ _FREQ_PREVIEW = 3
 _NULL_SENTINELS: tuple[str, ...] = ("", "N/A", "NA", "n/a", "na", "-", "None", "none")
 
 # Arrow canonical names that correspond to numeric types we can do stats on.
-_NUMERIC_DTYPES: frozenset[str] = frozenset({
-    "int8", "int16", "int32", "int64",
-    "uint8", "uint16", "uint32", "uint64",
-    "float", "float16", "float32", "float64", "double",
-    "decimal128", "decimal256",
-})
+_NUMERIC_DTYPES: frozenset[str] = frozenset(
+    {
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float",
+        "float16",
+        "float32",
+        "float64",
+        "double",
+        "decimal128",
+        "decimal256",
+    }
+)
 
 # Maximum correlation pairs to display (avoids flooding on wide datasets).
 _MAX_CORR_PAIRS = 6
 
 _SEV_TAG: dict[str, str] = {
-    "ok":   "[ OK  ]",
+    "ok": "[ OK  ]",
     "warn": "[WARN ]",
     "fail": "[FAIL ]",
 }
@@ -72,8 +85,7 @@ def _fmt_payload(payload: object) -> None:
             for item in v[:_FREQ_PREVIEW]:
                 if isinstance(item, dict):
                     parts = "  ".join(
-                        f"{ik}={iv:.6g}" if isinstance(iv, float)
-                        else f"{ik}={iv!r}"
+                        f"{ik}={iv:.6g}" if isinstance(iv, float) else f"{ik}={iv!r}"
                         for ik, iv in item.items()
                     )
                     print(f"      {parts}")
@@ -148,7 +160,11 @@ def _print_assessment(a: Assessment, fnd_map: dict[str, Finding]) -> None:
     for fnd_id in a.derived_from:
         fnd = fnd_map.get(fnd_id)
         if fnd:
-            print(f"    {_sev(fnd.severity)} {fnd_id}  ({fnd.type}  refs={fnd.scope.refs})")
+            refs = fnd.scope.refs
+            print(
+                f"    {_sev(fnd.severity)} {fnd_id}"
+                f"  ({fnd.type}  refs={refs})"
+            )
         else:
             print(f"    {fnd_id}")
 
@@ -159,9 +175,7 @@ def _print_assessment(a: Assessment, fnd_map: dict[str, Finding]) -> None:
 def _build_pairs(numeric_names: list[str]) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     pairs.extend(
-        (a, b)
-        for i, a in enumerate(numeric_names)
-        for b in numeric_names[i + 1:]
+        (a, b) for i, a in enumerate(numeric_names) for b in numeric_names[i + 1 :]
     )
     if len(numeric_names) == 1:
         pairs = [(numeric_names[0], numeric_names[0])]
@@ -216,8 +230,13 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
 
     for col_name in all_col_names:
         all_measurements.extend(
-            _run(plugin, ds, "tabular.column.missing",
-                 column=col_name, null_sentinels=_NULL_SENTINELS)
+            _run(
+                plugin,
+                ds,
+                "tabular.column.missing",
+                column=col_name,
+                null_sentinels=_NULL_SENTINELS,
+            )
         )
         for cap_id in ("tabular.column.uniqueness", "tabular.column.frequency"):
             all_measurements.extend(_run(plugin, ds, cap_id, column=col_name))
@@ -266,12 +285,19 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
     all_findings = RULE_REGISTRY.run_findings(ds.dataset_id, all_measurements)
 
     if not all_findings:
-        print("  (no findings produced — check that measurements cover the required types)")
+        print(
+            "  (no findings produced"
+            " — check that measurements cover the required types)"
+        )
     else:
         severity_order = {"fail": 0, "warn": 1, "ok": 2}
         for finding in sorted(
             all_findings,
-            key=lambda f: (severity_order.get(str(f.severity), 9), f.type, f.scope.refs),
+            key=lambda f: (
+                severity_order.get(str(f.severity), 9),
+                f.type,
+                f.scope.refs,
+            ),
         ):
             _print_finding(finding, msr_map)
 
