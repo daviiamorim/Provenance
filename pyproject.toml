@@ -23,7 +23,14 @@ dev = [
     "ruff>=0.6",
     "pytest>=8.3",
     "pytest-cov>=5.0",
-    "hypothesis>=6.112",
+    # Pinned below 6.112 deliberately: starting from that release hypothesis ships
+    # _native.cp313-win_amd64.pyd (Rust extension, no Authenticode signature).
+    # WDAC policy {0283ac0f-fff1-49ae-ada1-8a933130cad6} blocks unsigned .pyd files
+    # at kernel load time — the tests fail at collection with ImportError before
+    # any test runs. 6.111.x is pure-Python and behaviourally identical for our
+    # property-based tests. Do NOT bump past 6.111 without resolving the WDAC
+    # policy first (see docs/DECISIONS.md). — 2026-07-24
+    "hypothesis>=6.0,<6.112",
     "pre-commit>=3.8",
 ]
 

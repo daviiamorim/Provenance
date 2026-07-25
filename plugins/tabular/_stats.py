@@ -93,11 +93,17 @@ def compute_missing(
 def compute_descriptive(
     column: pa.Array | pa.ChunkedArray,
 ) -> dict[str, object]:
-    """Descriptive statistics (nulls dropped, quartile method=linear, ddof=1)."""
+    """Descriptive statistics (nulls dropped, quartile method=linear, ddof=1).
+
+    skewness: Fisher-Pearson standardised 3rd moment, requires count >= 3.
+    excess_kurtosis: Fisher definition (kurtosis - 3), requires count >= 4.
+    Both are sample-size independent and serve as effect-size measures for the
+    distribution_shape Finding rule; see docs/DECISIONS.md for threshold sources.
+    """
     arr = _to_float64(column)
     if len(arr) == 0:
         raise ValueError("Cannot compute descriptive statistics on a fully-null column")
-    return {
+    result: dict[str, object] = {
         "count": len(arr),
         "mean": float(np.mean(arr)),
         "std": float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0,
@@ -108,6 +114,11 @@ def compute_descriptive(
         "q75": float(np.quantile(arr, 0.75, method="linear")),
         "null_count": column.null_count,
     }
+    if len(arr) >= 3:
+        result["skewness"] = float(stats.skew(arr))
+    if len(arr) >= 4:
+        result["excess_kurtosis"] = float(stats.kurtosis(arr))
+    return result
 
 
 def compute_frequency(

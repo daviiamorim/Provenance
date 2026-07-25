@@ -122,6 +122,8 @@ class Finding:
     derived_from: tuple[str, ...]   # ids de Measurement (msr-) — não vazio
     rule: str
     rule_version: str
+    params: Mapping[str, object]    # limiares efetivos usados pela regra; visíveis
+                                    # para auditoria e incluídos no hash do ID
 
 @dataclass(frozen=True)
 class Assessment:
@@ -268,7 +270,7 @@ Para tipos declarados como simétricos no JSON Schema (`"x-symmetric": true`), a
     "dataset_id": dataset_id,
     "type": type_,
     "scope": {"kind": scope.kind.value, "refs": list(scope.refs)},
-    "params": {},
+    "params": dict(params),   # limiares efetivos; mudança de limiar → ID diferente
     "producer": rule,
     "version": rule_version,
 }
@@ -334,7 +336,71 @@ O campo `"x-symmetric": true` no schema declara que o tipo é simétrico (as ref
 
 ---
 
-## 5. O validador de Claims
+## 5. Sistema de regras de Finding e Assessment
+
+### RuleRegistry
+
+`RULE_REGISTRY` em `core/rules/_registry.py` é o análogo do `SCHEMA_REGISTRY` para regras. É pré-populado na importação de `core.rules` como efeito colateral da importação dos sub-pacotes. Não tem estado mutável após inicialização.
+
+Dois Protocols:
+
+```python
+class FindingRule(Protocol):
+    rule: str          # identificador namespaced, ex: "core.finding.missing_rate"
+    rule_version: str  # semver da regra; bump obrigatório se qualquer limiar mudar
+
+    def evaluate(
+        self, dataset_id: str, measurements: Sequence[Measurement]
+    ) -> list[Finding]: ...
+
+class AssessmentRule(Protocol):
+    rule: str
+    rule_version: str
+
+    def evaluate(
+        self, dataset_id: str, goal: str, findings: Sequence[Finding]
+    ) -> Assessment | None: ...
+```
+
+Regras são objetos stateless. Nenhuma regra lê banco, chama modelo de linguagem ou produz I/O. `evaluate()` é pura.
+
+### Regras de Finding implementadas (Etapa 3)
+
+| Regra | Tipo de Measurement consumido | Emite sempre? |
+|---|---|---|
+| `core.finding.distribution_shape` | `core.stats.normality` + `core.stats.descriptive` | Sim |
+| `core.finding.missing_rate` | `core.quality.missing` | Sim (ok é evidência positiva) |
+| `core.finding.duplicate_rate` | `core.quality.uniqueness` | Sim (ok é evidência positiva) |
+| `core.finding.category_balance` | `core.stats.frequency` + `core.quality.uniqueness` | Não (só para colunas categóricas) |
+| `core.finding.variable_association` | `core.stats.correlation` | Não (só para \|r\| ≥ 0,3) |
+
+### Regras de Assessment implementadas (Etapa 3)
+
+| Regra | Goal | Findings considerados | Vereditos |
+|---|---|---|---|
+| `core.assessment.modeling_readiness` | `modeling_readiness` | missing_rate, category_balance, variable_association (fail/warn), distribution_shape (warn) | `eligible` / `needs_attention` / `not_eligible` |
+| `core.assessment.data_quality` | `data_quality` | missing_rate, duplicate_rate | `acceptable` / `marginal` / `unacceptable` |
+
+### Princípio: p-valor não é critério de severidade
+
+Regras de Finding usam estatísticas de tamanho de efeito (W de Shapiro-Wilk, assimetria, curtose, |r|), nunca p-valores. p-valores são dependentes de N e produzem rejeições triviais com amostras grandes. Ver docs/DECISIONS.md para a justificativa completa e as fontes de cada limiar.
+
+### Visibilidade de limiares
+
+Todo limiar usado por uma regra aparece em `Finding.params` (Finding rules) ou `Assessment.policy` (Assessment rules). O auditor que clica em qualquer Finding ou Assessment vê contra qual régua o dado foi julgado, sem precisar ler o código-fonte.
+
+Consequência para IDs: `Finding.params` entra na fórmula de hash do `Finding.id`. Mudar um limiar produz um ID diferente, tornando a mudança de política rastreável no histórico.
+
+### Dependência de objetivo
+
+O mesmo conjunto de Findings pode gerar Assessments diferentes para goals diferentes. Isso é intencional e é o que justifica a separação Finding/Assessment:
+
+- `category_balance` com `severity=FAIL` → `modeling_readiness = not_eligible`
+- O mesmo Finding → `data_quality` inalterado (desequilíbrio não é defeito de qualidade)
+
+---
+
+## 6. O validador de Claims
 
 Este é o componente mais importante do sistema. Implemente em `core/validation/` como três camadas independentes, executadas em ordem crescente de custo, com parada na primeira rejeição.
 
@@ -357,46 +423,79 @@ Um Claim com `status = rejected_discarded` pode existir como registro persistido
 
 ---
 
-## 6. Sistema de plugins
+## 7. Sistema de plugins
 
 Interface mínima, em `core/plugin.py`. **Não adicione métodos além destes.** Se algo parecer precisar de um sexto método, pare e me pergunte.
+
+### Tipos de suporte (definidos na Etapa 2)
+
+```python
+@dataclass(frozen=True)
+class Source:
+    paths: tuple[Path, ...]     # um ou mais arquivos do mesmo envio
+    media_type: str | None      # MIME detectado por magic bytes antes de chegar ao plugin
+
+@dataclass(frozen=True)
+class SniffResult:
+    confidence: float           # 0.0 a 1.0
+    evidence: str               # justificativa legível por humano — é o que o usuário vê
+```
+
+`Dataset` é um Protocol com a interface mínima comum a todos os domínios:
+
+```python
+@runtime_checkable
+class Dataset(Protocol):
+    @property
+    def dataset_id(self) -> str: ...
+    @property
+    def source(self) -> Source: ...
+    def manifest(self) -> list[tuple[str, str]]: ...  # [(caminho_relativo, sha256)]
+```
+
+Plugins retornam subtipos concretos de `Dataset` em `open()`. O método `run()` recebe
+`Dataset` na assinatura e verifica `isinstance(ds, SeuDatasetConcreto)` internamente,
+levantando `TypeError` com mensagem descritiva se o tipo for incompatível.
+
+### Interface do plugin
 
 ```python
 class DomainPlugin(Protocol):
     name: str
     version: str
 
-    def sniff(self, source: Source) -> float:
-        """Confiança de 0.0 a 1.0 de que este plugin sabe ler esta fonte,
-        acompanhada de evidência textual do porquê."""
+    def sniff(self, source: Source) -> SniffResult:
+        """Pontua a confiança de 0.0 a 1.0 e explica o motivo.
+        Não decide o domínio — apenas pontua e apresenta evidência."""
 
     def open(self, source: Source) -> Dataset: ...
 
     def catalog(self) -> Catalog:
         """Declara tudo que este plugin sabe produzir, sem executar nada."""
 
-    def run(self, capability_id: str, ds: Dataset, **params) -> CapabilityResult: ...
-
-    def reference_profiles(self) -> list[ProfileRef]: ...
+    def run(self, capability_id: str, ds: Dataset, **params: object) -> CapabilityResult: ...
 ```
+
+`reference_profiles()` será adicionado na Etapa 8, quando `ProfileRef` for definido.
+
+### Tipos de catálogo e resultado
 
 ```python
 @dataclass(frozen=True)
 class Capability:
     id: str
     description: str
-    params_schema: dict       # JSON Schema dos parâmetros aceitos
-    produces: list[str]       # tipos de Measurement que emite
-    renders: bool             # produz Artifact?
+    params_schema: dict[str, object]   # JSON Schema dos parâmetros aceitos
+    produces: tuple[str, ...]          # tipos de Measurement que emite
+    renders: bool                      # produz Artifact?
     cost: Literal["cheap", "moderate", "expensive"]
 
 @dataclass(frozen=True)
 class Catalog:
-    """Catálogo declarativo do que o domínio consegue produzir em cada camada."""
-    capabilities: list[Capability]
-    measurement_types: list[str]
-    finding_rules: list[RuleRef]
-    assessment_rules: list[RuleRef]
+    """Catálogo declarativo do que o domínio consegue produzir."""
+    capabilities: tuple[Capability, ...]
+    measurement_types: tuple[str, ...]
+    # finding_rules e assessment_rules adicionados na Etapa 3 com campos reais.
 
 @dataclass(frozen=True)
 class CapabilityResult:
@@ -405,7 +504,7 @@ class CapabilityResult:
     # INVARIANTE: artifacts não-vazio com measurements vazio é erro de construção.
 ```
 
-Restrições que o core deve impor:
+### Restrições que o core impõe
 
 - Um plugin **nunca** escreve no banco, **nunca** chama modelo de linguagem, **nunca** gera HTML.
 - Descoberta de plugin via `entry_points` do `pyproject.toml`, grupo `data_observatory.plugins`. Nada de registry próprio, hot reload ou sandbox.
@@ -413,11 +512,9 @@ Restrições que o core deve impor:
 
 Implemente **dois** plugins neste MVP: um para dados tabulares e um para áudio. O de áudio existe para forçar a interface a suportar um domínio estruturalmente diferente do tabular; não o trate como opcional.
 
-`Source`, `Dataset`, `RuleRef` e `ProfileRef` serão definidos na Etapa 2.
-
 ---
 
-## 7. Ingestão
+## 8. Ingestão
 
 Implemente upload genérico de arquivos. O usuário envia um ou mais arquivos, ou um arquivo compactado contendo vários. O sistema não pede ao usuário que informe formato ou domínio.
 
@@ -431,7 +528,7 @@ Arquivos maiores que a memória disponível devem ser lidos em blocos. Não carr
 
 ---
 
-## 8. Pipeline
+## 9. Pipeline
 
 ```
 upload → detecção de formato → sugestão de domínio → confirmação do usuário
@@ -452,7 +549,7 @@ Capabilities executadas sob demanda consomem um orçamento por sessão: tempo de
 
 ---
 
-## 9. Perguntas pré-respondidas
+## 10. Perguntas pré-respondidas
 
 O pipeline responde automaticamente um conjunto fixo e pequeno de perguntas na ingestão. Cada pergunta é um `goal` que ativa um conjunto de regras de Assessment. Defina esse conjunto em configuração, não em código espalhado.
 
@@ -462,7 +559,7 @@ Quando uma pergunta livre não puder ser respondida pelos Measurements existente
 
 ---
 
-## 10. Perfis de referência
+## 11. Perfis de referência
 
 Um perfil de referência é um artefato versionado contendo estatísticas agregadas de uma população conhecida, usado para comparação por métricas de drift (KS, PSI, Wasserstein).
 
@@ -472,7 +569,7 @@ Neste MVP, implemente a mecânica de comparação e **um** perfil derivado de fo
 
 ---
 
-## 11. API e frontend
+## 12. API e frontend
 
 **API:** FastAPI. Endpoints para upload, listagem de datasets, execuções, catálogo de capabilities, execução sob demanda, consulta das quatro camadas, cadeia de evidências de um item qualquer, registros de validação e métricas de rejeição.
 
@@ -495,7 +592,7 @@ Qualidade mínima não negociável: responsivo, foco de teclado visível, `prefe
 
 ---
 
-## 12. Testes
+## 13. Testes
 
 Além dos testes unitários por regra:
 
@@ -507,7 +604,7 @@ Além dos testes unitários por regra:
 
 ---
 
-## 13. O que NÃO construir neste MVP
+## 14. O que NÃO construir neste MVP
 
 Autenticação. Multi-tenancy. Registry distribuído de perfis. Marketplace de plugins. Hot reload. Sandbox de execução. Versionamento próprio de datasets. RAG sobre literatura. Agente autônomo. Kubernetes. Múltiplas filas. Score agregado de qualidade. Camadas de abstração DDD.
 
@@ -515,7 +612,7 @@ Se ao implementar algo você concluir que um destes itens é necessário, pare e
 
 ---
 
-## 14. Ordem de execução
+## 15. Ordem de execução
 
 Trabalhe nesta ordem e **pare ao final de cada etapa para eu revisar** antes de seguir para a próxima.
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "core.stats.descriptive",
-  "description": "Descriptive statistics for a numeric column: count, mean, std, min, max, quartiles.",
+  "description": "Descriptive statistics for a numeric column: count, mean, std, min, max, quartiles, skewness, excess kurtosis.",
   "type": "object",
   "required": ["count", "mean", "std", "min", "max", "q25", "q50", "q75"],
   "additionalProperties": false,
@@ -15,13 +15,21 @@
     "std": {
       "type": "number",
       "minimum": 0,
-      "description": "Sample standard deviation."
+      "description": "Sample standard deviation (ddof=1)."
     },
     "min": { "type": "number" },
     "max": { "type": "number" },
-    "q25": { "type": "number", "description": "25th percentile." },
-    "q50": { "type": "number", "description": "50th percentile (median)." },
-    "q75": { "type": "number", "description": "75th percentile." },
+    "q25": { "type": "number", "description": "25th percentile (method=linear)." },
+    "q50": { "type": "number", "description": "50th percentile / median (method=linear)." },
+    "q75": { "type": "number", "description": "75th percentile (method=linear)." },
+    "skewness": {
+      "type": "number",
+      "description": "Fisher-Pearson standardized skewness (3rd standardised moment). Zero for a symmetric distribution. Present when count >= 3."
+    },
+    "excess_kurtosis": {
+      "type": "number",
+      "description": "Excess kurtosis (Fisher definition: kurtosis − 3). Zero for a normal distribution. Present when count >= 4."
+    },
     "null_count": {
       "type": "integer",
       "minimum": 0,

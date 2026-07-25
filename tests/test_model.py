@@ -89,7 +89,7 @@ def _measurement(
     )
 
 
-def _finding(msr_id: str = "msr-" + "a" * 32) -> Finding:
+def _finding(msr_id: str = "msr-" + "a" * 32, params: dict[str, object] | None = None) -> Finding:
     return Finding.create(
         dataset_id="dset-abc",
         type="core.finding.completeness",
@@ -99,6 +99,7 @@ def _finding(msr_id: str = "msr-" + "a" * 32) -> Finding:
         derived_from=(msr_id,),
         rule="core.rules.missing_check",
         rule_version="1.0.0",
+        params=params if params is not None else {},
     )
 
 
@@ -220,6 +221,11 @@ class TestImmutability:
         with pytest.raises(dataclasses.FrozenInstanceError):
             f.statement = "changed"  # type: ignore[misc]
 
+    def test_finding_params_frozen(self) -> None:
+        f = _finding(params={"threshold": 0.05})
+        with pytest.raises(TypeError):
+            f.params["threshold"] = 0.99  # type: ignore[index]
+
     def test_assessment_policy_frozen(self) -> None:
         a = _assessment()
         with pytest.raises(TypeError):
@@ -304,6 +310,17 @@ class TestDeterminism:
         )
         assert c1.id != c2.id
 
+    def test_finding_params_change_changes_id(self) -> None:
+        msr_id = _measurement().id
+        f1 = _finding(msr_id, params={"threshold": 0.05})
+        f2 = _finding(msr_id, params={"threshold": 0.10})
+        assert f1.id != f2.id
+
+    def test_finding_empty_params_same_id_as_default(self) -> None:
+        """Empty params dict is the canonical default; two identical findings must match."""
+        msr_id = _measurement().id
+        assert _finding(msr_id).id == _finding(msr_id).id
+
     def test_id_prefixes(self) -> None:
         m = _measurement()
         assert m.id.startswith("msr-")
@@ -372,6 +389,7 @@ class TestPrefixEnforcement:
                 derived_from=("fnd-wrong",),
                 rule="r",
                 rule_version="1.0.0",
+                params={},
             )
 
     def test_finding_rejects_ast_prefix(self) -> None:
@@ -385,6 +403,7 @@ class TestPrefixEnforcement:
                 derived_from=("ast-wrong",),
                 rule="r",
                 rule_version="1.0.0",
+                params={},
             )
 
     def test_assessment_requires_fnd_prefix(self) -> None:
@@ -459,6 +478,7 @@ class TestEmptyRefs:
                 derived_from=(),
                 rule="r",
                 rule_version="1.0.0",
+                params={},
             )
 
     def test_assessment_empty_derived_from(self) -> None:
@@ -633,6 +653,7 @@ class TestNoCyclePossible:
                 derived_from=("fnd-" + "a" * 32,),
                 rule="r",
                 rule_version="1.0.0",
+                params={},
             )
 
     def test_finding_cannot_reference_assessment(self) -> None:
@@ -646,6 +667,7 @@ class TestNoCyclePossible:
                 derived_from=("ast-" + "a" * 32,),
                 rule="r",
                 rule_version="1.0.0",
+                params={},
             )
 
     def test_assessment_cannot_reference_assessment(self) -> None:

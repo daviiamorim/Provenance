@@ -301,10 +301,11 @@ def _derive_finding_id(
     scope: Scope,
     rule: str,
     rule_version: str,
+    params: Mapping[str, object],
 ) -> str:
     identity: dict[str, object] = {
         "dataset_id": dataset_id,
-        "params": {},
+        "params": dict(params),
         "producer": rule,
         "scope": _scope_dict(scope),
         "type": type_,
@@ -440,11 +441,14 @@ class Finding:
     derived_from: tuple[str, ...]
     rule: str
     rule_version: str
+    params: Mapping[str, object]
 
     def __post_init__(self) -> None:
         if not self.derived_from:
             raise ValueError("Finding.derived_from cannot be empty")
         _check_refs(self.derived_from, "Finding.derived_from")
+        _normalize(self.params)  # raises on NaN/Infinity/unsupported types
+        object.__setattr__(self, "params", _freeze_mapping(self.params))
 
     @classmethod
     def create(
@@ -458,8 +462,9 @@ class Finding:
         derived_from: tuple[str, ...],
         rule: str,
         rule_version: str,
+        params: Mapping[str, object],
     ) -> Finding:
-        id_ = _derive_finding_id(dataset_id, type, scope, rule, rule_version)
+        id_ = _derive_finding_id(dataset_id, type, scope, rule, rule_version, params)
         return cls(
             id=id_,
             dataset_id=dataset_id,
@@ -470,6 +475,7 @@ class Finding:
             derived_from=derived_from,
             rule=rule,
             rule_version=rule_version,
+            params=params,
         )
 
 
