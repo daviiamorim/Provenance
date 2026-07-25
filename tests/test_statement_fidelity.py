@@ -107,9 +107,7 @@ def _assert_statement_numbers_in_params(
         candidates = [value]
         if is_pct:
             candidates.append(value / 100.0)
-        matched = any(
-            abs(c - p) <= tolerance for c in candidates for p in param_nums
-        )
+        matched = any(abs(c - p) <= tolerance for c in candidates for p in param_nums)
         assert matched, (
             f"Number {value}{'%' if is_pct else ''} in statement "
             f"'{statement}' not found in params {dict(params)}."  # type: ignore[call-overload]

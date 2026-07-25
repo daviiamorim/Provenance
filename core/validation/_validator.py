@@ -89,9 +89,7 @@ class Validator:
         ValidationRecord from them. Stops after the first FAIL.
         """
         checks: list[ValidationCheck] = []
-        valid_ids = frozenset(
-            [f.id for f in findings] + [a.id for a in assessments]
-        )
+        valid_ids = frozenset([f.id for f in findings] + [a.id for a in assessments])
 
         c1 = check_syntactic(sentence, valid_ids)
         checks.append(c1)
@@ -102,15 +100,11 @@ class Validator:
         cited_findings = [f for f in findings if f.id in cited_ids]
         cited_assessments = [a for a in assessments if a.id in cited_ids]
 
-        c2 = check_numeric(
-            sentence, cited_findings, cited_assessments, self._tolerance
-        )
+        c2 = check_numeric(sentence, cited_findings, cited_assessments, self._tolerance)
         checks.append(c2)
         if c2.verdict == ValidationVerdict.FAIL:
             return False, checks
 
-        c3 = check_semantic(
-            sentence, cited_findings, cited_assessments, self._judge
-        )
+        c3 = check_semantic(sentence, cited_findings, cited_assessments, self._judge)
         checks.append(c3)
         return c3.verdict == ValidationVerdict.PASS, checks

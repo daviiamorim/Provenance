@@ -106,9 +106,7 @@ def _is_supported(
     candidates = [value]
     if is_pct:
         candidates.append(value / 100.0)
-    return any(
-        abs(c - s) <= tolerance for c in candidates for s in source_values
-    )
+    return any(abs(c - s) <= tolerance for c in candidates for s in source_values)
 
 
 def check_numeric(

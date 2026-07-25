@@ -214,9 +214,7 @@ class TestBrNumberExtraction:
 
 class TestLayer2Numeric:
     def setup_method(self) -> None:
-        self.fnd = _make_finding(
-            missing_proportion=0.076, total=912, missing=69
-        )
+        self.fnd = _make_finding(missing_proportion=0.076, total=912, missing=69)
         self.ast = _make_assessment(self.fnd)
 
     def test_sentence_with_correct_proportion_passes(self) -> None:
@@ -424,18 +422,16 @@ class TestValidator:
 
     def test_semantic_fail_stops_at_layer3(self) -> None:
         sentence = f"Taxa de 7,6% [{self.fnd.id}]."
-        passed, checks = Validator(
-            judge=StubLanguageModel(["contradicted"])
-        ).validate(sentence, [self.fnd], [])
+        passed, checks = Validator(judge=StubLanguageModel(["contradicted"])).validate(
+            sentence, [self.fnd], []
+        )
         assert passed is False
         assert len(checks) == 3
         assert checks[-1].layer == ValidationLayer.SEMANTIC
 
     def test_sentence_with_no_numbers_skips_numeric_to_semantic(self) -> None:
         sentence = f"Qualidade comprometida [{self.fnd.id}]."
-        passed, checks = self._v("entailed").validate(
-            sentence, [self.fnd], []
-        )
+        passed, checks = self._v("entailed").validate(sentence, [self.fnd], [])
         assert passed is True
         layers = [c.layer for c in checks]
         assert ValidationLayer.NUMERIC in layers
@@ -457,12 +453,8 @@ class TestValidator:
     def test_configurable_tolerance_propagated(self) -> None:
         sentence = f"Taxa de 8,0% [{self.fnd.id}]."
         # diff=0.004; tight tolerance=0.003 → fail, loose=0.005 → pass
-        tight = Validator(
-            judge=StubLanguageModel(["entailed"]), tolerance=0.003
-        )
-        loose = Validator(
-            judge=StubLanguageModel(["entailed"]), tolerance=0.005
-        )
+        tight = Validator(judge=StubLanguageModel(["entailed"]), tolerance=0.003)
+        loose = Validator(judge=StubLanguageModel(["entailed"]), tolerance=0.005)
         passed_tight, _ = tight.validate(sentence, [self.fnd], [])
         passed_loose, _ = loose.validate(sentence, [self.fnd], [])
         assert passed_tight is False

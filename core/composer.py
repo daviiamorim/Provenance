@@ -74,9 +74,7 @@ def _serialize_sources(
         lines.append("## Assessments\n")
         for a in assessments:
             sev = _SEV_LABEL.get(str(a.severity), str(a.severity))
-            lines.append(
-                f"[{a.id}] (objetivo: {a.goal}) {sev} — {a.verdict}"
-            )
+            lines.append(f"[{a.id}] (objetivo: {a.goal}) {sev} — {a.verdict}")
             lines.append("")
 
     return "\n".join(lines)

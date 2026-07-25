@@ -29,22 +29,16 @@ from core.model import (
     ValidationVerdict,
 )
 
-_VERDICT_MAP: dict[str, SemanticVerdict] = {
-    v.value: v for v in SemanticVerdict
-}
+_VERDICT_MAP: dict[str, SemanticVerdict] = {v.value: v for v in SemanticVerdict}
 
 
 def _serialize_cited_sources(
     findings: Sequence[Finding],
     assessments: Sequence[Assessment],
 ) -> str:
-    lines = [
-        f"[{f.id}] {f.severity.value.upper()} — {f.statement}"
-        for f in findings
-    ]
+    lines = [f"[{f.id}] {f.severity.value.upper()} — {f.statement}" for f in findings]
     lines.extend(
-        f"[{a.id}] {a.severity.value.upper()}"
-        f" — goal={a.goal}, verdict={a.verdict}"
+        f"[{a.id}] {a.severity.value.upper()} — goal={a.goal}, verdict={a.verdict}"
         for a in assessments
     )
     return "\n".join(lines)

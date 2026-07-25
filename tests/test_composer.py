@@ -59,8 +59,7 @@ def _make_finding(col: str = "col_a", rate: float = 0.10) -> Finding:
         type="core.finding.missing_rate",
         scope=Scope(kind=ScopeKind.COLUMN, refs=(col,)),
         statement=(
-            f"Taxa de ausência elevada ({rate:.1%}, "
-            f"{int(rate * 100)}/100, limiar=5%)."
+            f"Taxa de ausência elevada ({rate:.1%}, {int(rate * 100)}/100, limiar=5%)."
         ),
         severity=Severity.FAIL,
         derived_from=(msr.id,),
@@ -122,9 +121,15 @@ class TestComposerIsolation:
         sig = inspect.signature(generate_report)
         param_names = set(sig.parameters)
         forbidden = {
-            "dataset", "measurement", "measurements",
-            "artifact", "artifacts", "table", "rows",
-            "dataframe", "raw_data",
+            "dataset",
+            "measurement",
+            "measurements",
+            "artifact",
+            "artifacts",
+            "table",
+            "rows",
+            "dataframe",
+            "raw_data",
         }
         violations = forbidden & param_names
         assert not violations, (
@@ -219,9 +224,10 @@ class TestRejectionFlow:
     def test_sentence_without_citation_rejected_then_rewrite_passes(self) -> None:
         fnd = _make_finding()
         result = _run_report(
-            [fnd], [],
+            [fnd],
+            [],
             [
-                "Sem citação alguma.",       # attempt 1 — no citation
+                "Sem citação alguma.",  # attempt 1 — no citation
                 f"Com citação [{fnd.id}].",  # rewrite — passes
             ],
         )
@@ -234,7 +240,8 @@ class TestRejectionFlow:
         fnd = _make_finding()
         bad_id = "fnd-" + "0" * 32
         result = _run_report(
-            [fnd], [],
+            [fnd],
+            [],
             [
                 f"Cita ID inexistente [{bad_id}].",
                 f"Cita ID válido [{fnd.id}].",
@@ -245,7 +252,8 @@ class TestRejectionFlow:
     def test_two_failures_discard_sentence(self) -> None:
         fnd = _make_finding()
         result = _run_report(
-            [fnd], [],
+            [fnd],
+            [],
             ["Sem citação.", "Sem citação."],
         )
         assert result.metrics.discarded == 1
@@ -254,7 +262,8 @@ class TestRejectionFlow:
     def test_rejection_records_capture_layer_and_attempt(self) -> None:
         fnd = _make_finding()
         result = _run_report(
-            [fnd], [],
+            [fnd],
+            [],
             ["Sem citação.", "Sem citação."],
         )
         assert len(result.rejected) == 2
@@ -265,7 +274,8 @@ class TestRejectionFlow:
         fnd = _make_finding("renda", 0.076)
         good = f"Taxa de 7,6% [{fnd.id}]."
         result = _run_report(
-            [fnd], [],
+            [fnd],
+            [],
             ["Sem citação.", good],
         )
         assert len(result.claims) == 1
@@ -292,7 +302,8 @@ class TestMetrics:
     def test_rejected_layer1_counts_correctly(self) -> None:
         fnd = _make_finding()
         result = _run_report(
-            [fnd], [],
+            [fnd],
+            [],
             ["Sem citação.", f"Com citação [{fnd.id}]."],
         )
         assert result.metrics.rejected_layer1 == 1

@@ -163,10 +163,7 @@ def _print_assessment(a: Assessment, fnd_map: dict[str, Finding]) -> None:
         fnd = fnd_map.get(fnd_id)
         if fnd:
             refs = fnd.scope.refs
-            print(
-                f"    {_sev(fnd.severity)} {fnd_id}"
-                f"  ({fnd.type}  refs={refs})"
-            )
+            print(f"    {_sev(fnd.severity)} {fnd_id}  ({fnd.type}  refs={refs})")
         else:
             print(f"    {fnd_id}")
 
