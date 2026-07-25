@@ -22,14 +22,18 @@ from typing import Final
 
 from core.model import Assessment, Finding, Scope, ScopeKind, Severity
 
-_FAIL_TYPES: Final[frozenset[str]] = frozenset({
-    "core.finding.missing_rate",
-    "core.finding.category_balance",
-    "core.finding.variable_association",
-})
-_WARN_TYPES: Final[frozenset[str]] = frozenset({
-    "core.finding.distribution_shape",
-})
+_FAIL_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "core.finding.missing_rate",
+        "core.finding.category_balance",
+        "core.finding.variable_association",
+    }
+)
+_WARN_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "core.finding.distribution_shape",
+    }
+)
 _ALL_CONSIDERED: Final[frozenset[str]] = _FAIL_TYPES | _WARN_TYPES
 
 _POLICY: dict[str, object] = {
@@ -58,11 +62,11 @@ class ModelingReadinessRule:
             return None
 
         fail_findings = [
-            f for f in relevant
-            if f.type in _FAIL_TYPES and f.severity == Severity.FAIL
+            f for f in relevant if f.type in _FAIL_TYPES and f.severity == Severity.FAIL
         ]
         warn_findings = [
-            f for f in relevant
+            f
+            for f in relevant
             if (f.type in _FAIL_TYPES and f.severity == Severity.WARN)
             or (f.type in _WARN_TYPES and f.severity in {Severity.FAIL, Severity.WARN})
         ]

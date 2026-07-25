@@ -103,3 +103,49 @@ O mesmo conjunto de Findings pode produzir Assessments diferentes para objetivos
 ### Finding.params
 
 Campo adicionado ao modelo `Finding` na Etapa 3. Contém os limiares efetivos usados pela regra para derivar o veredito. O ID do Finding inclui `params` na fórmula de hash — mudança de limiar produz ID diferente, tornando a decisão auditável e a mudança historicamente rastreável.
+
+---
+
+## 2026-07-25 — Etapa 4: Composer, Validator e geração de Claims
+
+### Decisão: camada 3 (semântica) antecipada da Etapa 9 para a Etapa 4
+
+A SPEC original colocava a camada 3 (verificação por LLM) na Etapa 9 e a Etapa 4 implementaria apenas camadas 1 e 2. A antecipação foi aprovada pelo seguinte motivo: a completude do validador é um invariante de segurança, não um incremento de funcionalidade. Implementar apenas L1+L2 entregaria um contrato falso — o validador pareceria completo mas permitiria que sentenças logicamente incorretas passassem silenciosamente. Ao entregar as três camadas juntas, o Claim passa a ter significado real desde o primeiro uso.
+
+O comportamento de Etapa 9 passa a ser: ajuste fino das métricas de rejeição, calibração de prompts e análise empírica da taxa de rejeição por camada com datasets reais.
+
+### Decisão: camada 2 verifica números contra Finding.params / Assessment.policy (não Measurements)
+
+O validador numérico compara os números extraídos de cada sentença gerada contra os valores numéricos presentes em `Finding.params` e `Assessment.policy`, e nunca contra `Measurement.payload` diretamente.
+
+**Motivo:** abrir um canal direto ao Measurement no caminho de validação permitiria que raw data do dataset chegasse ao processo de julgamento do texto, violando o princípio de isolamento do Composer. `Finding.params` já contém todos os números que a regra embute no `statement` — a coluna, a proporção, a contagem, os limiares.
+
+**Contra-argumento tratado:** se uma regra copiar um número errado do Measurement para `Finding.params`, o validador não detectaria a divergência — ele compara a sentença com `Finding.params`, e ambos concordariam no valor errado. Para fechar esse buraco, foi adicionada uma garantia separada (ver próxima seção).
+
+### Decisão: fidelidade Finding→Measurement verificada por suíte de testes parametrizados
+
+`tests/test_statement_fidelity.py` contém uma classe de teste por regra de Finding que verifica, para um conjunto representativo de parâmetros, que todo número presente em `Finding.statement` é rastreável a `Finding.params` dentro da tolerância padrão (0,005). A ideia é que `Finding.params` deve espelhar fielmente os valores de `Measurement.payload` que a regra usou para gerar o statement.
+
+A verificação é feita em tempo de teste (CI), não em runtime. Isso evita adicionar custo de asserção ao caminho quente de produção, enquanto garante que qualquer regressão de fidelidade quebre o build antes de chegar ao merge.
+
+A função `extract_br_numbers` de `core/validation/_layer2.py` é reutilizada nesses testes para garantir que o mesmo parser que o validador usa seja o mesmo que audita a fidelidade.
+
+### Decisão: Layer 2 usa formato numérico brasileiro para sentenças geradas por LLM
+
+O Compositor gera texto em português (por instrução de prompt). Modelos de linguagem instruídos a escrever em português tendem a usar vírgula como separador decimal (ex: "7,6%"). `Finding.statement` usa formato Python padrão (ponto decimal, ex: "7.6%") porque é gerado deterministicamente por f-strings.
+
+O parser de Layer 2 (`_BR_NUM_RE`) foi desenhado para o formato brasileiro. Para percentuais, o parser gera dois candidatos de comparação: o valor percentual (ex: 7.6) e a proporção correspondente (ex: 0.076). Qualquer um dos dois dentro da tolerância passa. Isso cobre tanto sentenças que citam "7,6%" quanto as raras que citam "0,076" sem sinal de percentual.
+
+### Estrutura dos novos módulos (Etapa 4)
+
+| Módulo | Responsabilidade |
+|---|---|
+| `core/llm.py` | `LanguageModel` Protocol + `StubLanguageModel` determinístico para testes |
+| `core/validation/_layer1.py` | Verificação sintática: presença e validade de citações `[fnd-/ast-]` |
+| `core/validation/_layer2.py` | Verificação numérica: parser BR + comparação contra params/policy |
+| `core/validation/_layer3.py` | Verificação semântica: LLM juiz com contexto isolado |
+| `core/validation/_validator.py` | Orquestração: para na primeira falha, expõe `RejectionRecord` e `ValidationMetrics` |
+| `core/composer.py` | `generate_report()`: gera texto → divide em sentenças → valida → reescreve (até 2 tentativas) → produz Claims |
+| `tests/test_composer.py` | Testa isolamento de assinatura + fluxo completo |
+| `tests/test_validation.py` | Testa cada camada isoladamente + orquestração |
+| `tests/test_statement_fidelity.py` | Garante fidelidade numérica Finding→Measurement por regra |

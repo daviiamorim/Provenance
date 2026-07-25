@@ -365,9 +365,7 @@ def _check_refs(refs: tuple[str, ...], field: str) -> None:
     for ref in refs:
         if not any(ref.startswith(p) for p in valid):
             allowed = " or ".join(sorted(valid))
-            raise ValueError(
-                f"{field} requires ids with prefix {allowed}, got {ref!r}"
-            )
+            raise ValueError(f"{field} requires ids with prefix {allowed}, got {ref!r}")
 
 
 # ── ValidationCheck / ValidationRecord ───────────────────────────────────────

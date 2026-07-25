@@ -101,8 +101,7 @@ class DistributionShapeRule:
         else:
             severity = Severity.FAIL
             statement = (
-                f"Distribuição não normal "
-                f"(Shapiro-Wilk W={w:.4f} < {_SW_WARN}, n={n})."
+                f"Distribuição não normal (Shapiro-Wilk W={w:.4f} < {_SW_WARN}, n={n})."
             )
         params: dict[str, object] = {
             "test": "shapiro_wilk",

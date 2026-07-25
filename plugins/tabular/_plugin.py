@@ -41,15 +41,37 @@ _PARQUET_EXTENSIONS: frozenset[str] = frozenset({".parquet", ".pq"})
 _PARQUET_MAGIC = b"PAR1"
 
 DEFAULT_NULL_SENTINELS: Final[tuple[str, ...]] = (
-    "", "N/A", "NA", "NULL", "NaN", "None", "n/a", "na", "nan", "null"
+    "",
+    "N/A",
+    "NA",
+    "NULL",
+    "NaN",
+    "None",
+    "n/a",
+    "na",
+    "nan",
+    "null",
 )
 
-_NUMERIC_DTYPES: Final[frozenset[str]] = frozenset({
-    "int8", "int16", "int32", "int64",
-    "uint8", "uint16", "uint32", "uint64",
-    "float", "float16", "float32", "float64", "double",
-    "decimal128", "decimal256",
-})
+_NUMERIC_DTYPES: Final[frozenset[str]] = frozenset(
+    {
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float",
+        "float16",
+        "float32",
+        "float64",
+        "double",
+        "decimal128",
+        "decimal256",
+    }
+)
 
 _NORMALITY_N_CUTOFF: Final = 5000
 
@@ -296,9 +318,7 @@ class TabularPlugin:
             )
 
         # Stream-hash files — O(1) memory, no full load
-        file_digests = [
-            (str(p.name), _file_sha256(p)) for p in source.paths
-        ]
+        file_digests = [(str(p.name), _file_sha256(p)) for p in source.paths]
 
         schema = self._read_schema(
             source.paths, is_parquet=is_parquet, null_sentinels=self._null_sentinels

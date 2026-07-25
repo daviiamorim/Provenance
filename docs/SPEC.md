@@ -619,12 +619,12 @@ Trabalhe nesta ordem e **pare ao final de cada etapa para eu revisar** antes de 
 1. `core/model.py` com as quatro camadas, `Provenance`, `Artifact` e derivação determinística de ID. Mais os JSON Schemas de um conjunto inicial pequeno de tipos de Measurement. Testes de imutabilidade e determinismo.
 2. Plugin tabular: `sniff`, `open`, `catalog`, capabilities baratas emitindo Measurements. Sem banco, sem API.
 3. Regras de Finding e de Assessment, versionadas, com testes por regra.
-4. Validador camadas 1 e 2, com testes. Primeiro laudo gerado e validado, saindo no terminal, sem frontend e sem banco.
+4. Validador camadas 1, 2 e 3, com testes. Primeiro laudo gerado e validado, saindo no terminal, sem frontend e sem banco. (Nota: camada 3 foi antecipada da Etapa 9; ver docs/DECISIONS.md.)
 5. Persistência em PostgreSQL e API FastAPI.
 6. Frontend.
 7. Plugin de áudio. Ao implementá-lo, relate onde a interface de plugin vazou ou precisou ser forçada — quero corrigir a abstração com base nisso antes de congelá-la.
 8. Perfil de referência e comparação por drift.
-9. Validador camada 3 e métricas de rejeição.
+9. Métricas de rejeição detalhadas e ajuste fino do validador semântico. (Camada 3 já implementada na Etapa 4.)
 10. Suíte de defeitos injetados.
 
 Ao final da etapa 4, o projeto está vivo. Tudo antes disso é fundação; tudo depois é superfície.

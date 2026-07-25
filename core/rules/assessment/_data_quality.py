@@ -21,10 +21,12 @@ from typing import Final
 
 from core.model import Assessment, Finding, Scope, ScopeKind, Severity
 
-_CONSIDERED: Final[frozenset[str]] = frozenset({
-    "core.finding.missing_rate",
-    "core.finding.duplicate_rate",
-})
+_CONSIDERED: Final[frozenset[str]] = frozenset(
+    {
+        "core.finding.missing_rate",
+        "core.finding.duplicate_rate",
+    }
+)
 
 _POLICY: dict[str, object] = {
     "considered_finding_types": sorted(_CONSIDERED),

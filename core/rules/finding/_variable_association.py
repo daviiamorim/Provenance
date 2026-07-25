@@ -23,8 +23,8 @@ from typing import Final
 
 from core.model import Finding, Measurement, Severity
 
-_EMIT_THRESHOLD: Final[float] = 0.3   # Cohen (1988): medium effect floor
-_FAIL_THRESHOLD: Final[float] = 0.7   # practical convention, multicollinearity concern
+_EMIT_THRESHOLD: Final[float] = 0.3  # Cohen (1988): medium effect floor
+_FAIL_THRESHOLD: Final[float] = 0.7  # practical convention, multicollinearity concern
 
 
 class VariableAssociationRule:

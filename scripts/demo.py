@@ -17,6 +17,8 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core.composer import ReportResult, generate_report
+from core.llm import StubLanguageModel
 from core.model import Assessment, Finding, Measurement
 from core.plugin import Source
 from core.rules import RULE_REGISTRY
@@ -169,6 +171,54 @@ def _print_assessment(a: Assessment, fnd_map: dict[str, Finding]) -> None:
             print(f"    {fnd_id}")
 
 
+# ── claims report helpers ─────────────────────────────────────────────────────
+
+_DEMO_RUN_ID = "run-demo" + "0" * 28
+
+
+def _make_claim_sentence(f: Finding) -> str:
+    """Return a demo Portuguese sentence citing f, numbers in Brazilian format."""
+    col = f.scope.refs[0] if f.scope.refs else "dataset"
+    if f.type == "core.finding.missing_rate":
+        rate = float(f.params.get("missing_proportion", 0))
+        pct_br = f"{rate * 100:.1f}".replace(".", ",")
+        return f"A coluna {col} tem {pct_br}% de valores ausentes [{f.id}]."
+    if f.type == "core.finding.duplicate_rate":
+        rate = float(f.params.get("duplicate_proportion", 0))
+        pct_br = f"{rate * 100:.1f}".replace(".", ",")
+        return f"O dataset apresenta {pct_br}% de linhas duplicadas [{f.id}]."
+    return f"Foi identificado achado '{f.type.split('.')[-1]}' [{f.id}]."
+
+
+def _print_claims_report(result: ReportResult) -> None:
+    m = result.metrics
+    print(f"  total sentences : {m.total_sentences}")
+    print(f"  claims approved : {len(result.claims)}")
+    print(f"  discarded       : {m.discarded}  (discard rate {m.discard_rate:.1%})")
+    rates = m.rejection_rate_by_layer
+    print(
+        f"  rejection rates : syntactic={rates['syntactic']:.1%}"
+        f"  numeric={rates['numeric']:.1%}"
+        f"  semantic={rates['semantic']:.1%}"
+    )
+    if result.claims:
+        print()
+        print("  Claims:")
+        for clm in result.claims:
+            a_count = clm.validation.attempts
+            tag = f"  (attempt {a_count})" if a_count > 1 else ""
+            print(f"    [{clm.id[:16]}…] {clm.text}{tag}")
+    if result.rejected:
+        print()
+        print("  Rejected:")
+        for r in result.rejected:
+            snippet = repr(r.text[:55])
+            print(
+                f"    [attempt {r.attempt}] [{r.layer.value}]"
+                f" {r.reason_code}: {snippet}"
+            )
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 
@@ -309,9 +359,11 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
     print(_SEP)
 
     fnd_map = {f.id: f for f in all_findings}
+    all_assessments: list[Assessment] = []
     any_assessment = False
     for goal in ("data_quality", "modeling_readiness"):
         assessments = RULE_REGISTRY.run_assessments(ds.dataset_id, goal, all_findings)
+        all_assessments.extend(assessments)
         for assessment in assessments:
             _print_assessment(assessment, fnd_map)
             any_assessment = True
@@ -320,6 +372,34 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
             "  (no assessments produced — findings must include at least one "
             "relevant type per goal)"
         )
+
+    # ── claims report ─────────────────────────────────────────────────────────
+    print()
+    print(_SEP)
+    print()
+    print("=== claims report ===")
+    print(_SEP)
+
+    fail_findings = [f for f in all_findings if str(f.severity) in ("fail", "warn")]
+    stub_sentences = [_make_claim_sentence(f) for f in fail_findings[:6]]
+    stub_sentences.extend(
+        f"A avaliação de {a.goal} resultou em situação {a.verdict} [{a.id}]."
+        for a in all_assessments[:2]
+    )
+
+    if stub_sentences:
+        stub_text = " ".join(stub_sentences)
+        report = generate_report(
+            findings=all_findings,
+            assessments=all_assessments,
+            composer_model=StubLanguageModel([stub_text]),
+            judge_model=StubLanguageModel(["entailed"] * 50),
+            run_id=_DEMO_RUN_ID,
+            dataset_id=ds.dataset_id,
+        )
+        _print_claims_report(report)
+    else:
+        print("  (no fail/warn findings — nothing to claim)")
 
     print()
     print(_SEP)

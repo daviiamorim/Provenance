@@ -182,7 +182,10 @@ def _correlation_msr(col_a: str, col_b: str, *, r: float, n: int) -> Measurement
         type="core.stats.correlation",
         scope=_pair_scope(col_a, col_b),
         payload={
-            "method": "pearson", "coefficient": r, "p_value": 0.001, "sample_size": n
+            "method": "pearson",
+            "coefficient": r,
+            "p_value": 0.001,
+            "sample_size": n,
         },
         provenance=_prov(),
     )
@@ -314,8 +317,13 @@ class TestDistributionShapeRule:
             f"W={w_stat:.4f} — normally distributed data should have high W"
         )
 
-        m = _normality_msr("age_int", test="shapiro_wilk", statistic=float(w_stat),
-                           p_value=float(p_val), sample_size=len(data))
+        m = _normality_msr(
+            "age_int",
+            test="shapiro_wilk",
+            statistic=float(w_stat),
+            p_value=float(p_val),
+            sample_size=len(data),
+        )
         findings = self.rule.evaluate(DATASET_ID, [m])
         assert findings[0].severity == Severity.OK
 
@@ -325,8 +333,13 @@ class TestDistributionShapeRule:
         data = rng.exponential(scale=1.0, size=200).astype(float)
         w_stat, p_val = scipy_stats.shapiro(data)
         # Exponential has skewness=2, kurtosis=6; W should be well below 0.90
-        m = _normality_msr("income", test="shapiro_wilk", statistic=float(w_stat),
-                           p_value=float(p_val), sample_size=len(data))
+        m = _normality_msr(
+            "income",
+            test="shapiro_wilk",
+            statistic=float(w_stat),
+            p_value=float(p_val),
+            sample_size=len(data),
+        )
         findings = self.rule.evaluate(DATASET_ID, [m])
         assert findings[0].severity == Severity.FAIL
 

@@ -651,10 +651,12 @@ class TestRunCapability:
         p = _parquet_file(
             tmp_path,
             "xy.parquet",
-            pa.table({
-                "x": pa.array([1.0, 2.0, 3.0], type=pa.float64()),
-                "y": pa.array([2.0, 4.0, 6.0], type=pa.float64()),
-            }),
+            pa.table(
+                {
+                    "x": pa.array([1.0, 2.0, 3.0], type=pa.float64()),
+                    "y": pa.array([2.0, 4.0, 6.0], type=pa.float64()),
+                }
+            ),
         )
         ds = self.plugin.open(Source(paths=(p,)))
         r_ab = self.plugin.run(
@@ -765,8 +767,7 @@ class TestNullSentinels:
     def _csv_with_sentinels(self, tmp_path: Path) -> Path:
         """CSV where 'score' column has sentinel strings that should become null."""
         content = (
-            "id,score,label\n"
-            "1,85.0,pass\n2,N/A,fail\n3,,pass\n4,92.0,pass\n5,NA,fail\n"
+            "id,score,label\n1,85.0,pass\n2,N/A,fail\n3,,pass\n4,92.0,pass\n5,NA,fail\n"
         )
         p = tmp_path / "sentinels.csv"
         p.write_text(content, encoding="utf-8")
