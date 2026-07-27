@@ -377,26 +377,67 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
     print("=== claims report ===")
     print(_SEP)
 
-    fail_findings = [f for f in all_findings if str(f.severity) in ("fail", "warn")]
-    stub_sentences = [_make_claim_sentence(f) for f in fail_findings[:6]]
-    stub_sentences.extend(
-        f"A avaliação de {a.goal} resultou em situação {a.verdict} [{a.id}]."
-        for a in all_assessments[:2]
+    fnd_missing = next(
+        (
+            f
+            for f in all_findings
+            if f.type == "core.finding.missing_rate" and "renda_mensal" in f.scope.refs
+        ),
+        None,
+    )
+    fnd_dup = next(
+        (f for f in all_findings if f.type == "core.finding.duplicate_rate"),
+        None,
     )
 
-    if stub_sentences:
-        stub_text = " ".join(stub_sentences)
+    if fnd_missing is None or fnd_dup is None:
+        print(
+            "  (missing required findings for validator demo"
+            " — run on colaboradores.csv)"
+        )
+    else:
+        missing_pct = cast("float", fnd_missing.params["missing_proportion"])
+        pct_br = f"{missing_pct * 100:.1f}".replace(".", ",")
+        missing_count = cast("int", fnd_missing.params["missing_count"])
+        total = cast("int", fnd_missing.params["total_count"])
+
+        # 1. Correct — real numbers + valid citation → passes all layers
+        s_correct = (
+            f"A coluna renda_mensal apresenta taxa de ausência de {pct_br}%,"
+            f" afetando {missing_count} dos {total} colaboradores [{fnd_missing.id}]."
+        )
+        # 2. Wrong number — 9,2% vs actual ~1,3% → barred at layer 2 (numeric)
+        s_wrong_num = (
+            f"O dataset possui 9,2% de linhas duplicadas,"
+            f" acima do limiar de 1% [{fnd_dup.id}]."
+        )
+        # 3. No citation → barred at layer 1 (syntactic)
+        s_no_citation = (
+            "Os dados de satisfação dos colaboradores"
+            " apresentam problemas de qualidade significativos."
+        )
+
+        # Rewrites (both still wrong → discarded after MAX_ATTEMPTS=2)
+        rewrite_wrong_num = (
+            f"Cerca de 5,8% das linhas são duplicatas,"
+            f" excedendo o limiar [{fnd_dup.id}]."
+        )
+        rewrite_no_citation = (
+            "O campo satisfacao apresenta o maior índice de ausência no conjunto."
+        )
+
+        initial_text = f"{s_correct} {s_wrong_num} {s_no_citation}"
         report = generate_report(
             findings=all_findings,
             assessments=all_assessments,
-            composer_model=StubLanguageModel([stub_text]),
+            composer_model=StubLanguageModel(
+                [initial_text, rewrite_wrong_num, rewrite_no_citation]
+            ),
             judge_model=StubLanguageModel(["entailed"] * 50),
             run_id=_DEMO_RUN_ID,
             dataset_id=ds.dataset_id,
         )
         _print_claims_report(report)
-    else:
-        print("  (no fail/warn findings — nothing to claim)")
 
     print()
     print(_SEP)

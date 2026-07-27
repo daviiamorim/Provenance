@@ -12,6 +12,13 @@ dependencies = [
     "pyarrow>=17,<19",
     "numpy>=2.0",
     "scipy>=1.14",
+    # stage 5: persistence + API
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "python-multipart>=0.0.9",
 ]
 
 [project.entry-points."data_observatory.plugins"]
@@ -32,10 +39,12 @@ dev = [
     # policy first (see docs/DECISIONS.md). — 2026-07-24
     "hypothesis>=6.0,<6.112",
     "pre-commit>=3.8",
+    # stage 5: API testing
+    "httpx>=0.27",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["core", "plugins"]
+packages = ["core", "plugins", "db", "api"]
 
 # ── Ruff ──────────────────────────────────────────────────────────────────────
 [tool.ruff]
@@ -72,6 +81,16 @@ ignore = [
     "BLE001", # broad exception catch — intentional for graceful demo output
     "INP001", # implicit namespace package — scripts/ has no __init__.py
 ]
+"db/migrations/**" = [
+    "INP001",  # namespace package — Alembic generates this structure
+    "ANN",     # annotations — Alembic template doesn't enforce them
+]
+"db/pipeline.py" = [
+    "BLE001",  # broad exception catch — intentional: skip failing capabilities gracefully
+    "S110",    # try/except/pass — intentional for plugin capability errors
+    "C901",    # complexity — pipeline orchestration is inherently a sequence of steps
+    "PLR0912", # too many branches — same reason
+]
 
 # ── Mypy ──────────────────────────────────────────────────────────────────────
 [tool.mypy]
@@ -92,11 +111,24 @@ ignore_missing_imports = true
 module = "pyarrow.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "alembic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sqlalchemy.*"
+ignore_missing_imports = true
+
+# Migration scripts use Alembic internals that are difficult to type in strict mode.
+[[tool.mypy.overrides]]
+module = "db.migrations.*"
+ignore_errors = true
+
 # ── Pytest ────────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=core --cov=plugins --cov-report=term-missing -q"
+addopts = "--cov=core --cov=plugins --cov=db --cov=api --cov-report=term-missing -q"
 
 [tool.coverage.run]
-source = ["core", "plugins"]
-omit = ["tests/*"]
+source = ["core", "plugins", "db", "api"]
+omit = ["tests/*", "db/migrations/*"]

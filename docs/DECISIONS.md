@@ -149,3 +149,42 @@ O parser de Layer 2 (`_BR_NUM_RE`) foi desenhado para o formato brasileiro. Para
 | `tests/test_composer.py` | Testa isolamento de assinatura + fluxo completo |
 | `tests/test_validation.py` | Testa cada camada isoladamente + orquestração |
 | `tests/test_statement_fidelity.py` | Garante fidelidade numérica Finding→Measurement por regra |
+
+---
+
+## 2026-07-27 — Etapa 5: três tabelas de run_membership em vez de uma
+
+A SPEC descreve `run_membership(run_id, item_id, layer)` como uma associação genérica. Essa estrutura foi **intencionalmente substituída** por três tabelas separadas:
+
+```sql
+run_membership_measurements (run_id, measurement_id)
+run_membership_findings     (run_id, finding_id)
+run_membership_assessments  (run_id, assessment_id)
+```
+
+**Motivo:** uma única tabela com `item_id TEXT` genérico não pode declarar chaves estrangeiras reais para três tabelas-pai diferentes (`measurements`, `findings`, `assessments`). PostgreSQL não suporta FK polimórfica. Sem FKs, o banco não pode garantir a integridade referencial — um `item_id` poderia referenciar um registro inexistente sem que o banco detectasse. As três tabelas têm FKs reais e PRIMARY KEY composta `(run_id, item_id)` que combina unicidade e integridade em uma única declaração.
+
+**Consequência para ON CONFLICT:** cada tabela usa `ON CONFLICT (run_id, measurement_id | finding_id | assessment_id) DO NOTHING`, que garante idempotência (re-executar o mesmo pipeline com o mesmo código e configuração é seguro).
+
+**Assessment.scope não persistido:** o dataclass `Assessment` em `core/model.py` deliberadamente não inclui um campo `scope`. O scope é passado para `Assessment.create()` apenas para derivar o ID; uma vez derivado, o valor não é armazenado no objeto nem na tabela. A tabela `assessments` omite a coluna de scope por consequência direta dessa decisão do modelo.
+
+---
+
+## 2026-07-27 — Etapa 5: estrutura de módulos de persistência e API
+
+| Módulo | Responsabilidade |
+|---|---|
+| `db/connection.py` | `get_connection()` — fábrica de conexão psycopg3 com `dict_row` |
+| `db/migrations/` | Alembic: `env.py` lê `DATABASE_URL` do ambiente; `versions/0001_initial.py` cria todo o schema |
+| `db/repos/` | Um arquivo por entidade: `upsert`, `get`, `list_*`. Sem ORM. |
+| `db/repos/memberships.py` | Três funções `upsert_measurement/finding/assessment` para as tabelas de run_membership |
+| `db/pipeline.py` | Orquestração: carrega dataset → roda capabilities baratas → aplica regras → persiste tudo → retorna `run_id` |
+| `api/deps.py` | `get_db()` — dependency FastAPI que abre conexão psycopg3 e faz commit/rollback via context manager |
+| `api/schemas.py` | Modelos Pydantic v2 para requests e responses |
+| `api/routers/datasets.py` | `POST /datasets/upload`, `GET /datasets`, `GET /datasets/{id}`, `GET /datasets/{id}/runs` |
+| `api/routers/runs.py` | `POST /runs`, `GET /runs/{id}`, `/measurements`, `/findings`, `/assessments`, `/claims`, `/validation`, `/metrics` |
+| `api/routers/catalog.py` | `GET /catalog` — catálogo de capabilities de todos os plugins registrados |
+| `api/routers/chain.py` | `GET /chain/{item_id}` — cadeia de evidências a partir de qualquer item (`clm-`, `ast-`, `fnd-`, `msr-`) |
+| `tests/conftest.py` | Fixture `db_conn`: conexão com `autocommit=False`, rollback no teardown |
+| `tests/test_db.py` | Testes de repositório (requerem `TEST_DATABASE_URL`) |
+| `tests/test_api.py` | Testes de endpoint (requerem `TEST_DATABASE_URL`) |
