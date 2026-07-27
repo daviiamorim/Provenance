@@ -1,19 +1,30 @@
 """Shared test fixtures.
 
 Database tests require TEST_DATABASE_URL to be set (see .env.example).
-They are automatically skipped when that variable is absent, so the existing
-unit-test suite continues to work without Docker.
+If a .env file is present in the project root it is loaded automatically,
+so running `uv run pytest` after copying .env.example works without any
+manual environment variable setup.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
 from psycopg.rows import dict_row
+
+# Load .env from project root if present — setdefault so explicit env vars win.
+_env_file = Path(__file__).parent.parent / ".env"
+if _env_file.exists():
+    for _raw in _env_file.read_text(encoding="utf-8").splitlines():
+        _raw = _raw.strip()
+        if _raw and not _raw.startswith("#") and "=" in _raw:
+            _k, _, _v = _raw.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 _TEST_DB_VAR = "TEST_DATABASE_URL"
 

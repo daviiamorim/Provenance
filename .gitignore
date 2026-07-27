@@ -35,3 +35,6 @@ Thumbs.db
 
 # Claude Code local config
 .claude/
+
+# Local environment — never commit credentials
+.env
