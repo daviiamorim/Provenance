@@ -230,7 +230,7 @@ def _build_pairs(numeric_names: list[str]) -> list[tuple[str, str]]:
 
 
 def main() -> None:  # noqa: C901, PLR0912, PLR0915
-    if len(sys.argv) != 2:  # noqa: PLR2004
+    if len(sys.argv) != 2:
         print(f"usage: python {sys.argv[0]} <file.csv|file.parquet>", file=sys.stderr)
         sys.exit(1)
 

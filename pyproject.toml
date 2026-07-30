@@ -19,6 +19,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "python-multipart>=0.0.9",
+    "python-dotenv>=1.2.2",
 ]
 
 [project.entry-points."data_observatory.plugins"]
@@ -77,9 +78,11 @@ ignore = [
     "SLF001",  # private member access — tests may inspect internals
 ]
 "scripts/**" = [
-    "T201",   # print — expected in CLI scripts
-    "BLE001", # broad exception catch — intentional for graceful demo output
-    "INP001", # implicit namespace package — scripts/ has no __init__.py
+    "T201",    # print — expected in CLI scripts
+    "BLE001",  # broad exception catch — intentional for graceful demo output
+    "INP001",  # implicit namespace package — scripts/ has no __init__.py
+    "E402",    # imports after sys.stdout.reconfigure + load_dotenv — intentional ordering
+    "PLR2004", # HTTP 200 is a conventional magic number in smoke tests
 ]
 "db/migrations/**" = [
     "INP001",  # namespace package — Alembic generates this structure

@@ -188,8 +188,8 @@ def get_report(run_id: str, conn: Annotated[Conn, Depends(get_db)]) -> ReportOut
     row_count: int | None = None
     column_refs: set[str] = set()
     for m in measurements:
-        if m.type == "core.quality.missing" and m.scope.kind.value == "dataset":
-            rc = m.payload.get("row_count")
+        if m.type == "core.quality.row_dedup" and m.scope.kind.value == "dataset":
+            rc = m.payload.get("total_rows")
             if isinstance(rc, int):
                 row_count = rc
         if m.scope.kind.value == "column":

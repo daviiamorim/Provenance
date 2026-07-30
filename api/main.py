@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+# Load .env before any module reads os.environ at import time.
+# python-dotenv is a no-op when the vars are already set (e.g., in CI).
+from dotenv import load_dotenv
 
-from api.routers import catalog, chain, datasets, runs
+load_dotenv()
+
+from fastapi import FastAPI  # noqa: E402
+
+from api.routers import catalog, chain, datasets, runs  # noqa: E402
 
 app = FastAPI(
     title="data-observatory",
