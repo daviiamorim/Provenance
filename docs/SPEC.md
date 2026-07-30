@@ -573,7 +573,9 @@ Neste MVP, implemente a mecânica de comparação e **um** perfil derivado de fo
 
 **API:** FastAPI. Endpoints para upload, listagem de datasets, execuções, catálogo de capabilities, execução sob demanda, consulta das quatro camadas, cadeia de evidências de um item qualquer, registros de validação e métricas de rejeição.
 
-**Frontend:** React + TypeScript + Vite. Sem framework de UI pesado.
+**Frontend:** React + TypeScript + Vite + Tailwind CSS (configurado com paleta e fontes do projeto). Pasta `web/` na raiz do repositório. Sem framework de UI pesado (sem MUI, Chakra, shadcn nem similares).
+
+Em desenvolvimento, Vite sobe em `http://localhost:5173` e proxeia `/api/*` → `http://localhost:8000` via `vite.config.ts`. Nunca fala com o banco diretamente — apenas com a API FastAPI.
 
 O backend emite especificações de gráfico (Vega-Lite JSON) e o frontend as renderiza. O backend **não** gera imagens. Isso torna todo gráfico serializável, versionável e testável.
 

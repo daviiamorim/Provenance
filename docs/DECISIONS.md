@@ -182,9 +182,70 @@ run_membership_assessments  (run_id, assessment_id)
 | `api/deps.py` | `get_db()` — dependency FastAPI que abre conexão psycopg3 e faz commit/rollback via context manager |
 | `api/schemas.py` | Modelos Pydantic v2 para requests e responses |
 | `api/routers/datasets.py` | `POST /datasets/upload`, `GET /datasets`, `GET /datasets/{id}`, `GET /datasets/{id}/runs` |
-| `api/routers/runs.py` | `POST /runs`, `GET /runs/{id}`, `/measurements`, `/findings`, `/assessments`, `/claims`, `/validation`, `/metrics` |
+| `api/routers/runs.py` | `POST /runs`, `GET /runs/{id}`, `/measurements`, `/findings`, `/assessments`, `/claims`, `/validation`, `/metrics`, `/report` |
 | `api/routers/catalog.py` | `GET /catalog` — catálogo de capabilities de todos os plugins registrados |
 | `api/routers/chain.py` | `GET /chain/{item_id}` — cadeia de evidências a partir de qualquer item (`clm-`, `ast-`, `fnd-`, `msr-`) |
 | `tests/conftest.py` | Fixture `db_conn`: conexão com `autocommit=False`, rollback no teardown |
 | `tests/test_db.py` | Testes de repositório (requerem `TEST_DATABASE_URL`) |
 | `tests/test_api.py` | Testes de endpoint (requerem `TEST_DATABASE_URL`) |
+
+---
+
+## 2026-07-29 — Etapa 6 Fatia 1: frontend — lista de datasets + laudo
+
+### Stack
+
+React + TypeScript + Vite + Tailwind CSS v4 (configurado via `@tailwindcss/vite`). Pasta `web/` na raiz. O Vite proxeia `/api/*` → `http://localhost:8000` em desenvolvimento — o frontend nunca fala com o banco diretamente.
+
+### Identidade visual
+
+| Elemento | Decisão |
+|---|---|
+| Tipografia de laudo (Claims) | Fraunces (Google Fonts) — serifada, ~18 px |
+| Tipografia de interface | Inter (Google Fonts) — sans-serif |
+| Identificadores e mono | JetBrains Mono |
+| Tema padrão | escuro; alternância via botão no canto superior direito persistido em `localStorage` |
+| Fundo escuro | `#101511`; texto `#E4EAE2`; divisórias `#1E2820`; muted `#647065` |
+| Acento escuro | verde `#5FB98A` |
+| Acento claro | verde `#2C6E49` |
+| Badge FAIL | borda + texto `#E8756A`, fundo 12% |
+| Badge WARN | borda + texto `#C48B2F` |
+| Badge OK | borda + texto `#5FB98A` |
+
+### Endpoint de laudo — `GET /runs/{run_id}/report`
+
+Adicionado à Fatia 1 porque o frontend precisaria de lógica de negócio para agrupar Claims por seção e calcular severidade por Claim se essas computações ficassem no browser (violação da regra "sem lógica de negócio no frontend").
+
+O endpoint retorna:
+- `dataset_name`: primeiro `path` do manifest
+- `counts.rows`: de `core.quality.missing` com scope `dataset`, campo `row_count`
+- `counts.columns`: refs distintas de escopo `column` nos measurements desta run
+- `counts.findings`: count de findings nesta run
+- `counts.claims`: count de claims com `status = 'passed'`
+- `sections`: Claims agrupados por `goal` do primeiro Assessment em `supports`; Claims que só suportam Findings vão para `goal = "general"`
+- `severity` por Claim: max severity entre todos os Findings/Assessments em `supports`
+
+Claims com `status = rejected_discarded` são excluídos na camada de repositório (`list_passed_by_run`) — nunca chegam ao endpoint de laudo.
+
+### Organização de pastas do frontend
+
+```
+web/
+  src/
+    api/        # client.ts (fetch tipado) + types.ts (interfaces TS dos DTOs da API)
+    components/ # SeverityBadge, ThemeToggle
+    hooks/      # useTheme
+    pages/      # DatasetList, Report
+```
+
+### Comandos para rodar tudo junto
+
+```
+# Terminal 1 — API (na raiz do repositório)
+uv run uvicorn api.main:app --reload --port 8000
+
+# Terminal 2 — Frontend (em web/)
+npm run dev
+```
+
+Acesse `http://localhost:5173`. Para popular o banco, rode o pipeline antes de subir a interface.

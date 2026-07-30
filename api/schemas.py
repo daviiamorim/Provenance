@@ -201,6 +201,33 @@ class RunMetrics(BaseModel):
     rejection_rate_semantic: float
 
 
+class ClaimSummary(BaseModel):
+    id: str
+    text: str
+    supports: list[str]
+    severity: str
+
+
+class ReportCounts(BaseModel):
+    rows: int | None
+    columns: int
+    findings: int
+    claims: int
+
+
+class ReportSection(BaseModel):
+    goal: str
+    claims: list[ClaimSummary]
+
+
+class ReportOut(BaseModel):
+    run_id: str
+    dataset_id: str
+    dataset_name: str
+    counts: ReportCounts
+    sections: list[ReportSection]
+
+
 class EvidenceChain(BaseModel):
     root_id: str
     claim: ClaimOut | None = None
