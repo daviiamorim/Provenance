@@ -18,7 +18,7 @@ repos:
 
       - id: mypy
         name: mypy
-        entry: uv run mypy
+        entry: uv run python -m mypy
         args: [core, db, api, tests]
         language: system
         pass_filenames: false

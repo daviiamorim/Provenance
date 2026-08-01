@@ -1,4 +1,4 @@
-import type { DatasetOut, ReportOut, RunOut } from './types'
+import type { DatasetOut, EvidenceChain, ReportOut, RunOut } from './types'
 
 const BASE = '/api'
 
@@ -15,4 +15,5 @@ export const api = {
   listDatasets: () => get<DatasetOut[]>('/datasets'),
   listRuns: (datasetId: string) => get<RunOut[]>(`/datasets/${datasetId}/runs`),
   getReport: (runId: string) => get<ReportOut>(`/runs/${runId}/report`),
+  getChain: (itemId: string) => get<EvidenceChain>(`/chain/${itemId}`),
 }

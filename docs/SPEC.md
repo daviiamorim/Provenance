@@ -585,7 +585,7 @@ Elementos obrigatórios da interface:
 2. **Contagem de verificações** por severidade. **Não implemente um score agregado de qualidade** — um número único não é rastreável e viola o princípio do projeto.
 3. **Linha do tempo de construção do conhecimento**: uma faixa mostrando quantos itens existem em cada camada, do Measurement ao Claim.
 4. **Cartões de pergunta pré-respondida**, expansíveis.
-5. **Gaveta de cadeia de evidências**: clicar em qualquer Claim abre a navegação Claim → Assessment → Finding → Measurement, exibindo em cada nível a regra e a versão que o produziu, e no nível final a procedência completa incluindo `input_digest`.
+5. **Gaveta de cadeia de evidências** (implementada na Etapa 6 Fatia 2): clicar em qualquer Claim (ou nas suas etiquetas de fonte) abre um drawer lateral com a cadeia completa Claim → Assessment → Finding → Measurement, totalmente expandida. Em cada nível são exibidos a regra e a versão que o produziu. No nível Measurement, a procedência completa (`producer`, `version`, `params`, `input_digest`, `duration_ms`) aparece inline, sem clique adicional. O drawer é acionado por um único `GET /chain/{clm-id}` — o frontend nunca faz mais de um fetch por abertura. Acessibilidade: `role="dialog"`, `aria-modal`, foco gerenciado, `Esc` fecha.
 6. **Painel de validação** listando as sentenças rejeitadas, a camada que rejeitou e o motivo. Esta tela é funcionalidade visível, não ferramenta de depuração.
 
 Distinga as camadas visualmente de forma consistente — o usuário deve reconhecer o nível de uma informação antes de ler o conteúdo.

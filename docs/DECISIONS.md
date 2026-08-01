@@ -249,3 +249,53 @@ npm run dev
 ```
 
 Acesse `http://localhost:5173`. Para popular o banco, rode o pipeline antes de subir a interface.
+
+---
+
+## 2026-08-01 — Etapa 6 Fatia 2: gaveta de evidências
+
+### Endpoint de cadeia — contrato
+
+`GET /chain/{item_id}` — aceita prefixos `clm-`, `ast-`, `fnd-`, `msr-`. Retorna uma estrutura **plana** com quatro arrays paralelos:
+
+```json
+{
+  "root_id": "clm-...",
+  "claim": { "id", "text", "supports", "validation" } | null,
+  "assessments": [ { "id", "goal", "verdict", "severity", "rule", "rule_version", "policy", "derived_from" } ],
+  "findings":    [ { "id", "statement", "severity", "rule", "rule_version", "params", "derived_from" } ],
+  "measurements":[ { "id", "type", "scope", "payload", "provenance": { "producer", "version", "params", "input_digest", "duration_ms", "seed" } } ]
+}
+```
+
+A travessia acontece inteiramente no backend: o endpoint coleta todos os itens alcançáveis a partir do `item_id` raiz e os devolve em um único payload. O frontend nunca faz mais de um fetch por abertura de cadeia.
+
+**Por que plano em vez de aninhado:** o frontend constrói a árvore para renderização cruzando IDs dentro do payload já recebido — isso é lógica de apresentação, não de negócio. Um payload plano é mais simples de serializar, testar e versionar.
+
+### Comportamento do painel (EvidenceDrawer)
+
+- Abre como drawer lateral deslizante da direita ao clicar em qualquer parte de um `ClaimRow` (texto, badge de severidade ou etiquetas de fonte).
+- Largura: 480 px em telas ≥ 768 px; 100% em mobile. Overlay semi-transparente atrás fecha ao clicar.
+- Cadeia sempre totalmente expandida — sem nível oculto. O `input_digest` e a procedência do Measurement aparecem inline sem clique adicional.
+- Acessibilidade: `role="dialog"`, `aria-modal="true"`, foco move para o botão "×" na abertura, `Esc` fecha e retorna foco ao elemento que acionou o drawer.
+- `prefers-reduced-motion`: respeitado globalmente via `index.css` (`transition-duration: 0.01ms !important`).
+
+### Distinção visual das camadas
+
+| Camada | Borda esquerda | Cor do chip de rótulo |
+|---|---|---|
+| Claim | nenhuma (cabeçalho do drawer) | `--color-text` |
+| Assessment | 2 px `--color-accent` (verde) | `--color-accent` |
+| Finding | 2 px `--color-muted` (cinza) | `--color-muted` |
+| Measurement | 2 px `--color-divider` (sutil) | `--color-muted` |
+
+Indentação progressiva com `pl-4` por nível. Provenance do Measurement em bloco bordeado `font-mono`.
+
+### Arquivos de frontend criados/modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `web/src/api/types.ts` | Tipos adicionados: `ScopeOut`, `ProvenanceOut`, `MeasurementOut`, `FindingOut`, `AssessmentOut`, `EvidenceChain` |
+| `web/src/api/client.ts` | `api.getChain(itemId)` — fetch único para `/chain/${itemId}` |
+| `web/src/components/EvidenceDrawer.tsx` | Novo componente: drawer + renderização da árvore Claim → Assessment → Finding → Measurement |
+| `web/src/pages/Report.tsx` | `ClaimRow` convertido para `<button>`, recebe `onOpenChain`; `Report` gerencia `selectedClaimId` e renderiza `EvidenceDrawer` |

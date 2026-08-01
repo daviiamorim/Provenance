@@ -1,3 +1,72 @@
+export interface ScopeOut {
+  kind: string
+  refs: string[]
+}
+
+export interface ProvenanceOut {
+  producer: string
+  version: string
+  params: Record<string, unknown>
+  input_digest: string
+  duration_ms: number
+  seed: number | null
+}
+
+export interface MeasurementOut {
+  id: string
+  dataset_id: string
+  type: string
+  scope: ScopeOut
+  payload: Record<string, unknown>
+  provenance: ProvenanceOut
+}
+
+export interface FindingOut {
+  id: string
+  dataset_id: string
+  type: string
+  scope: ScopeOut
+  statement: string
+  severity: string
+  derived_from: string[]
+  rule: string
+  rule_version: string
+  params: Record<string, unknown>
+}
+
+export interface AssessmentOut {
+  id: string
+  dataset_id: string
+  type: string
+  goal: string
+  verdict: string
+  severity: string
+  derived_from: string[]
+  rule: string
+  rule_version: string
+  policy: Record<string, unknown>
+}
+
+export interface EvidenceChain {
+  root_id: string
+  claim: {
+    id: string
+    dataset_id: string
+    run_id: string
+    text: string
+    supports: string[]
+    validation: {
+      status: string
+      attempts: number
+      checks: { layer: string; verdict: string; reason_code: string; detail: Record<string, unknown>; duration_ms: number }[]
+      final_layer_reached: string
+    }
+  } | null
+  assessments: AssessmentOut[]
+  findings: FindingOut[]
+  measurements: MeasurementOut[]
+}
+
 export interface DatasetOut {
   id: string
   created_at: string
