@@ -67,6 +67,39 @@ export interface EvidenceChain {
   measurements: MeasurementOut[]
 }
 
+export interface RejectionOut {
+  id: string
+  run_id: string
+  text: string
+  layer: 'syntactic' | 'numeric' | 'semantic'
+  reason_code: string
+  detail: Record<string, unknown>
+  attempt: number
+}
+
+export interface RunCounts {
+  measurements: number
+  findings: number
+  assessments: number
+  claims_passed: number
+}
+
+export interface SeverityCounts {
+  ok: number
+  warn: number
+  fail: number
+}
+
+export interface RunMetrics {
+  run_id: string
+  counts: RunCounts
+  severity: SeverityCounts
+  total_rejections: number
+  rejections_syntactic: number
+  rejections_numeric: number
+  rejections_semantic: number
+}
+
 export interface DatasetOut {
   id: string
   created_at: string

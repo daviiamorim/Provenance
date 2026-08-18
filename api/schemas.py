@@ -191,14 +191,37 @@ class RunCreateOut(BaseModel):
     run_id: str
 
 
+class RejectionOut(BaseModel):
+    id: str
+    run_id: str
+    text: str
+    layer: str
+    reason_code: str
+    detail: dict[str, Any]
+    attempt: int
+
+
+class RunCounts(BaseModel):
+    measurements: int
+    findings: int
+    assessments: int
+    claims_passed: int
+
+
+class SeverityCounts(BaseModel):
+    ok: int
+    warn: int
+    fail: int
+
+
 class RunMetrics(BaseModel):
     run_id: str
-    total_claims: int
-    total_passed: int
-    total_discarded: int
-    rejection_rate_syntactic: float
-    rejection_rate_numeric: float
-    rejection_rate_semantic: float
+    counts: RunCounts
+    severity: SeverityCounts
+    total_rejections: int
+    rejections_syntactic: int
+    rejections_numeric: int
+    rejections_semantic: int
 
 
 class ClaimSummary(BaseModel):

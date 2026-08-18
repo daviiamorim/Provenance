@@ -14,21 +14,24 @@ from api.schemas import (
     ClaimSummary,
     FindingOut,
     MeasurementOut,
+    RejectionOut,
     ReportCounts,
     ReportOut,
     ReportSection,
+    RunCounts,
     RunCreateOut,
     RunCreateRequest,
     RunMetrics,
     RunOut,
+    SeverityCounts,
 )
-from core.model import ValidationLayer
 from db import pipeline as pl
 from db.repos import assessments as assessment_repo
 from db.repos import claims as claim_repo
 from db.repos import datasets as dataset_repo
 from db.repos import findings as finding_repo
 from db.repos import measurements as measurement_repo
+from db.repos import rejections as rejection_repo
 from db.repos import runs as run_repo
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -114,14 +117,26 @@ def get_claims(
     return [ClaimOut.from_model(c) for c in claim_repo.list_passed_by_run(conn, run_id)]
 
 
-@router.get("/{run_id}/validation", response_model=list[ClaimOut])
+@router.get("/{run_id}/validation", response_model=list[RejectionOut])
 def get_validation_records(
     run_id: str,
     conn: Annotated[Conn, Depends(get_db)],
-) -> list[ClaimOut]:
-    """Return all claims including rejected ones — for the validation audit panel."""
+) -> list[RejectionOut]:
+    """Return persisted rejection events for the validation audit panel."""
     _require_run(conn, run_id)
-    return [ClaimOut.from_model(c) for c in claim_repo.list_all_by_run(conn, run_id)]
+    rows = rejection_repo.list_by_run(conn, run_id)
+    return [
+        RejectionOut(
+            id=str(r["id"]),
+            run_id=str(r["run_id"]),
+            text=str(r["text"]),
+            layer=str(r["layer"]),
+            reason_code=str(r["reason_code"]),
+            detail=dict(r["detail"]),
+            attempt=int(r["attempt"]),
+        )
+        for r in rows
+    ]
 
 
 @router.get("/{run_id}/metrics", response_model=RunMetrics)
@@ -129,33 +144,37 @@ def get_metrics(
     run_id: str,
     conn: Annotated[Conn, Depends(get_db)],
 ) -> RunMetrics:
-    """Rejection metrics for this run, computed from all stored claims."""
+    """Run health summary: layer counts, severity distribution, rejection metrics."""
     _require_run(conn, run_id)
-    all_claims = claim_repo.list_all_by_run(conn, run_id)
 
-    total = len(all_claims)
-    passed = sum(1 for c in all_claims if c.validation.status.value == "passed")
-    discarded = total - passed
+    m_count = len(measurement_repo.list_by_run(conn, run_id))
+    all_findings = finding_repo.list_by_run(conn, run_id)
+    all_assessments = assessment_repo.list_by_run(conn, run_id)
+    passed_claims = claim_repo.list_passed_by_run(conn, run_id)
+    rejection_rows = rejection_repo.list_by_run(conn, run_id)
 
-    def _reject_rate(layer: ValidationLayer) -> float:
-        rejected = sum(
-            1
-            for c in all_claims
-            if any(
-                ch.layer == layer and ch.verdict.value == "fail"
-                for ch in c.validation.checks
-            )
-        )
-        return rejected / total if total else 0.0
+    sev_ok = sum(1 for f in all_findings if f.severity.value == "ok")
+    sev_warn = sum(1 for f in all_findings if f.severity.value == "warn")
+    sev_fail = sum(1 for f in all_findings if f.severity.value == "fail")
+
+    total_rej = len(rejection_rows)
+    rej_syn = sum(1 for r in rejection_rows if r["layer"] == "syntactic")
+    rej_num = sum(1 for r in rejection_rows if r["layer"] == "numeric")
+    rej_sem = sum(1 for r in rejection_rows if r["layer"] == "semantic")
 
     return RunMetrics(
         run_id=run_id,
-        total_claims=total,
-        total_passed=passed,
-        total_discarded=discarded,
-        rejection_rate_syntactic=_reject_rate(ValidationLayer.SYNTACTIC),
-        rejection_rate_numeric=_reject_rate(ValidationLayer.NUMERIC),
-        rejection_rate_semantic=_reject_rate(ValidationLayer.SEMANTIC),
+        counts=RunCounts(
+            measurements=m_count,
+            findings=len(all_findings),
+            assessments=len(all_assessments),
+            claims_passed=len(passed_claims),
+        ),
+        severity=SeverityCounts(ok=sev_ok, warn=sev_warn, fail=sev_fail),
+        total_rejections=total_rej,
+        rejections_syntactic=rej_syn,
+        rejections_numeric=rej_num,
+        rejections_semantic=rej_sem,
     )
 
 

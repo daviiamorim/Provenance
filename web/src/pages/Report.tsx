@@ -1,9 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ClaimSummary, ReportOut, ReportSection } from '../api/types'
 import { SeverityBadge } from '../components/SeverityBadge'
 import { EvidenceDrawer } from '../components/EvidenceDrawer'
+import { ValidationPanel } from '../components/ValidationPanel'
+import { SummaryPanel } from '../components/SummaryPanel'
+
+type Tab = 'report' | 'validation' | 'summary'
+
+const TAB_LABELS: Record<Tab, string> = {
+  report: 'Laudo',
+  validation: 'Validação',
+  summary: 'Resumo',
+}
+
+const TABS: Tab[] = ['report', 'validation', 'summary']
 
 const GOAL_LABELS: Record<string, string> = {
   data_quality: 'QUALIDADE',
@@ -32,12 +44,10 @@ function ClaimRow({
       onClick={() => onOpenChain(claim.id)}
       aria-label={`Ver cadeia de evidências: ${claim.text.slice(0, 80)}`}
     >
-      {/* left column: severity badge */}
       <div className="pt-1 flex flex-col gap-1.5">
         <SeverityBadge severity={claim.severity} />
       </div>
 
-      {/* right column: text + source tags */}
       <div>
         <p className="font-serif text-[18px] leading-[1.55] text-[var(--color-text)] mb-2.5">
           {claim.text}
@@ -86,18 +96,94 @@ function Section({
   )
 }
 
+function TabNav({
+  activeTab,
+  onChange,
+}: {
+  activeTab: Tab
+  onChange: (t: Tab) => void
+}) {
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  function handleKeyDown(e: React.KeyboardEvent, idx: number) {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      const next = (idx + 1) % TABS.length
+      tabRefs.current[next]?.focus()
+      onChange(TABS[next])
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      const prev = (idx - 1 + TABS.length) % TABS.length
+      tabRefs.current[prev]?.focus()
+      onChange(TABS[prev])
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      tabRefs.current[0]?.focus()
+      onChange(TABS[0])
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      tabRefs.current[TABS.length - 1]?.focus()
+      onChange(TABS[TABS.length - 1])
+    }
+  }
+
+  return (
+    <nav
+      role="tablist"
+      aria-label="Visões do laudo"
+      className="flex gap-0 border-b border-[var(--color-divider)] mb-8"
+    >
+      {TABS.map((tab, idx) => {
+        const isActive = tab === activeTab
+        return (
+          <button
+            key={tab}
+            ref={(el) => {
+              tabRefs.current[idx] = el
+            }}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={`panel-${tab}`}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => onChange(tab)}
+            onKeyDown={(e) => handleKeyDown(e, idx)}
+            className="px-4 py-2.5 font-mono text-[12px] uppercase tracking-wider transition-colors relative"
+            style={{
+              color: isActive ? 'var(--color-accent)' : 'var(--color-muted)',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              borderBottom: isActive
+                ? '2px solid var(--color-accent)'
+                : '2px solid transparent',
+              marginBottom: '-1px',
+              background: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {TAB_LABELS[tab]}
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
 export function Report() {
   const { runId } = useParams<{ runId: string }>()
   const [report, setReport] = useState<ReportOut | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<Tab>('report')
 
   useEffect(() => {
     if (!runId) return
     api
       .getReport(runId)
       .then(setReport)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : String(e)),
+      )
   }, [runId])
 
   if (error) {
@@ -117,7 +203,9 @@ export function Report() {
   if (!report) {
     return (
       <main className="max-w-2xl mx-auto px-6 py-16">
-        <p className="font-mono text-sm text-[var(--color-muted)]">carregando…</p>
+        <p className="font-mono text-sm text-[var(--color-muted)]">
+          carregando…
+        </p>
       </main>
     )
   }
@@ -134,7 +222,7 @@ export function Report() {
           ← datasets
         </Link>
 
-        <header className="mb-10">
+        <header className="mb-8">
           <h1 className="font-sans text-2xl font-semibold text-[var(--color-text)] mb-3">
             {report.dataset_name}
           </h1>
@@ -148,15 +236,42 @@ export function Report() {
           </div>
         </header>
 
-        {report.sections.length === 0 ? (
-          <p className="font-mono text-sm text-[var(--color-muted)]">
-            nenhuma afirmação aprovada nesta execução
-          </p>
-        ) : (
-          report.sections.map((s) => (
-            <Section key={s.goal} section={s} onOpenChain={setSelectedClaimId} />
-          ))
-        )}
+        <TabNav activeTab={activeTab} onChange={setActiveTab} />
+
+        <div
+          id="panel-report"
+          role="tabpanel"
+          aria-labelledby="tab-report"
+          hidden={activeTab !== 'report'}
+        >
+          {report.sections.length === 0 ? (
+            <p className="font-mono text-sm text-[var(--color-muted)]">
+              nenhuma afirmação aprovada nesta execução
+            </p>
+          ) : (
+            report.sections.map((s) => (
+              <Section key={s.goal} section={s} onOpenChain={setSelectedClaimId} />
+            ))
+          )}
+        </div>
+
+        <div
+          id="panel-validation"
+          role="tabpanel"
+          aria-labelledby="tab-validation"
+          hidden={activeTab !== 'validation'}
+        >
+          {runId && <ValidationPanel runId={runId} />}
+        </div>
+
+        <div
+          id="panel-summary"
+          role="tabpanel"
+          aria-labelledby="tab-summary"
+          hidden={activeTab !== 'summary'}
+        >
+          {runId && <SummaryPanel runId={runId} />}
+        </div>
       </main>
 
       <EvidenceDrawer

@@ -299,3 +299,46 @@ Indentação progressiva com `pl-4` por nível. Provenance do Measurement em blo
 | `web/src/api/client.ts` | `api.getChain(itemId)` — fetch único para `/chain/${itemId}` |
 | `web/src/components/EvidenceDrawer.tsx` | Novo componente: drawer + renderização da árvore Claim → Assessment → Finding → Measurement |
 | `web/src/pages/Report.tsx` | `ClaimRow` convertido para `<button>`, recebe `onOpenChain`; `Report` gerencia `selectedClaimId` e renderiza `EvidenceDrawer` |
+
+---
+
+## 2026-08-18 — Etapa 6 Fatia 3: painel de validação, painel de resumo, abas
+
+### Lacuna confirmada: rejeições não eram persistidas
+
+A Etapa 5 não incluiu tabela para as rejeições de validação. O compositor (`core/composer.py`) produzia `RejectionRecord` objects que existiam apenas em memória. A tabela `claims` armazena o `ValidationRecord` por Claim aprovado, mas claims rejeitados (com `status = rejected_discarded`) violam a invariante `supports` não-vazio (rejeições sintáticas não têm citação). Isso tornava o painel de validação impossível de implementar honestamente.
+
+### Decisão: tabela `claim_rejections` separada de `claims`
+
+Nova tabela (migração `0002`) com colunas: `id`, `run_id`, `text`, `layer`, `reason_code`, `detail` (JSONB), `attempt`, `created_at`. ID derivado deterministicamente de `"rej-" + sha256(run_id|text|attempt)[:24]`. `ON CONFLICT DO NOTHING` garante idempotência.
+
+**Por que não usar `Claim` com `status = rejected_discarded`:** a invariante `Claim.supports` não pode ser vazia, mas rejeições sintáticas não têm nenhuma citação válida. Criar um tipo de Claim com supports vazio quebraria o modelo de dados. A tabela separada não tem essa restrição e armazena exatamente o que a API precisa servir: texto + camada + motivo + tentativa.
+
+### Endpoints atualizados
+
+| Endpoint | Antes | Depois |
+|---|---|---|
+| `GET /runs/{id}/validation` | Retornava todos os `Claim` incluindo reprovados (fonte incorreta) | Lê de `claim_rejections`, retorna `list[RejectionOut]` |
+| `GET /runs/{id}/metrics` | Taxas de rejeição calculadas sobre `claims` (vazio) | Contagens reais: measurements, findings, assessments, claims_passed; severity por findings; rejeições por camada de `claim_rejections` |
+
+### Geração de rejeições reais para demo
+
+`scripts/_generate_claims_with_rejections.py` configura o stub para produzir 3 tipos de rejeição genuínas (validador real, entradas reais):
+
+- **Sintática:** frase sem citação — L1 rejeita nas 2 tentativas; sentença descartada.
+- **Numérica:** "45,3% de valores ausentes" em `renda_mensal` — L2 rejeita porque o valor real no `Finding.params` é 7,6% (missing_proportion=0.0757); o número adulterado não coincide dentro da tolerância de 0,005.
+- **Semântica:** frase que cita `ast_quality` (verdict=unacceptable) mas afirma "excelente condição" — `SemanticKeywordJudge` retorna "contradicted" ao encontrar essa frase; genuinamente contraditório, como um LLM real faria.
+
+O stub do compositor usa `StubLanguageModel` para sequenciar frases e reescritas deterministicamente. O `_COMPOSER_REPORT` inicia as 4 frases como texto único; `_split_sentences` as separa (regex exige início com maiúscula).
+
+### Frontend: abas e painéis
+
+| Componente | Responsabilidade |
+|---|---|
+| `TabNav` (em `Report.tsx`) | `role="tablist"`, navegação por ←→/Home/End, `aria-selected`, underline ativo em verde |
+| `ValidationPanel.tsx` | Busca `/validation`+`/metrics`; faixa de métricas no topo; cards de rejeição com borda vermelha, badge de camada, motivo em mono |
+| `SummaryPanel.tsx` | Busca `/metrics`; grid de contadores (M/F/A/C); barras de severidade OK/WARN/FAIL; contagens de rejeição por camada |
+
+### CI: checagem de frontend adicionada
+
+Novo job `frontend` em `.github/workflows/ci.yml`: `npm ci` → `tsc --noEmit -p tsconfig.app.json` → `npm run build`. Independente do job Python (roda em paralelo). Garante que erros de tipo TypeScript e falhas de build sejam detectados pelo porteiro automático.
