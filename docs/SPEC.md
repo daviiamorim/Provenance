@@ -2,13 +2,11 @@
 
 ---
 
-Você vai construir o MVP de uma plataforma de análise de datasets cuja característica definidora é esta:
+MVP de uma plataforma de análise de datasets cuja característica definidora é esta:
 
 **Nenhuma afirmação exibida ao usuário pode existir sem uma cadeia de evidências que chegue até o cálculo determinístico que a produziu.**
 
 Esse princípio não é um requisito entre outros. Ele é a razão de existir do projeto e deve ser aplicado como restrição de tipo sempre que possível — se uma violação puder ser impedida pelo modelo de dados em vez de por convenção, impeça pelo modelo de dados.
-
-Antes de escrever código, leia esta especificação inteira. Se algo aqui for ambíguo ou parecer errado, pergunte antes de implementar. Não invente requisitos que não estão aqui.
 
 ---
 
@@ -464,19 +462,11 @@ class DomainPlugin(Protocol):
     name: str
     version: str
 
-    def sniff(self, source: Source) -> SniffResult:
-        """Pontua a confiança de 0.0 a 1.0 e explica o motivo.
-        Não decide o domínio — apenas pontua e apresenta evidência."""
-
+    def sniff(self, source: Source) -> SniffResult: ...   # pontua confiança 0.0–1.0
     def open(self, source: Source) -> Dataset: ...
-
-    def catalog(self) -> Catalog:
-        """Declara tudo que este plugin sabe produzir, sem executar nada."""
-
+    def catalog(self) -> Catalog: ...                     # declara capabilities sem executar
     def run(self, capability_id: str, ds: Dataset, **params: object) -> CapabilityResult: ...
 ```
-
-`reference_profiles()` será adicionado na Etapa 8, quando `ProfileRef` for definido.
 
 ### Tipos de catálogo e resultado
 
@@ -510,7 +500,7 @@ class CapabilityResult:
 - Descoberta de plugin via `entry_points` do `pyproject.toml`, grupo `data_observatory.plugins`. Nada de registry próprio, hot reload ou sandbox.
 - `CapabilityResult` com `artifacts` não vazio e `measurements` vazio é erro, levantado pelo core na construção.
 
-Implemente **dois** plugins neste MVP: um para dados tabulares e um para áudio. O de áudio existe para forçar a interface a suportar um domínio estruturalmente diferente do tabular; não o trate como opcional.
+Dois plugins no MVP: tabular (implementado, Etapa 2) e áudio (Etapa 7). O de áudio existe para forçar a interface a suportar um domínio estruturalmente diferente do tabular.
 
 ---
 
@@ -612,23 +602,17 @@ Além dos testes unitários por regra:
 
 Autenticação. Multi-tenancy. Registry distribuído de perfis. Marketplace de plugins. Hot reload. Sandbox de execução. Versionamento próprio de datasets. RAG sobre literatura. Agente autônomo. Kubernetes. Múltiplas filas. Score agregado de qualidade. Camadas de abstração DDD.
 
-Se ao implementar algo você concluir que um destes itens é necessário, pare e me pergunte antes de construir.
-
 ---
 
 ## 15. Ordem de execução
 
-Trabalhe nesta ordem e **pare ao final de cada etapa para eu revisar** antes de seguir para a próxima.
-
-1. `core/model.py` com as quatro camadas, `Provenance`, `Artifact` e derivação determinística de ID. Mais os JSON Schemas de um conjunto inicial pequeno de tipos de Measurement. Testes de imutabilidade e determinismo.
-2. Plugin tabular: `sniff`, `open`, `catalog`, capabilities baratas emitindo Measurements. Sem banco, sem API.
-3. Regras de Finding e de Assessment, versionadas, com testes por regra.
-4. Validador camadas 1, 2 e 3, com testes. Primeiro laudo gerado e validado, saindo no terminal, sem frontend e sem banco. (Nota: camada 3 foi antecipada da Etapa 9; ver docs/DECISIONS.md.)
-5. Persistência em PostgreSQL e API FastAPI.
-6. Frontend.
-7. Plugin de áudio. Ao implementá-lo, relate onde a interface de plugin vazou ou precisou ser forçada — quero corrigir a abstração com base nisso antes de congelá-la.
+1. ✓ `core/model.py` — quatro camadas, `Provenance`, `Artifact`, derivação determinística de ID, JSON Schemas.
+2. ✓ Plugin tabular — `sniff`, `open`, `catalog`, capabilities baratas emitindo Measurements.
+3. ✓ Regras de Finding e Assessment, versionadas, com testes por regra.
+4. ✓ Validador camadas 1, 2 e 3, com testes. Camada 3 antecipada da Etapa 9 (ver docs/DECISIONS.md).
+5. ✓ Persistência em PostgreSQL e API FastAPI.
+6. ✓ Frontend — lista de datasets, laudo, gaveta de evidências, painel de validação, painel de resumo, abas.
+7. Plugin de áudio (força a interface a suportar domínio estruturalmente diferente do tabular).
 8. Perfil de referência e comparação por drift.
-9. Métricas de rejeição detalhadas e ajuste fino do validador semântico. (Camada 3 já implementada na Etapa 4.)
+9. Métricas de rejeição detalhadas e ajuste fino do validador semântico.
 10. Suíte de defeitos injetados.
-
-Ao final da etapa 4, o projeto está vivo. Tudo antes disso é fundação; tudo depois é superfície.
