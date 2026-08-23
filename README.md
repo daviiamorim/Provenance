@@ -1,107 +1,154 @@
-# data-observatory
+# provenance
 
-## Princípio
+[Leia em português](README.pt.md)
 
-Nenhuma afirmação exibida ao usuário pode existir sem uma cadeia de evidências que chegue até o cálculo determinístico que a produziu.
+AI tools can read a spreadsheet, write a report, and sound completely confident — even when the numbers are wrong. The model doesn't know it's hallucinating; it has no concept of truth, only of plausible next words. The person reading the report has no way to check, because there's no trail to follow.
 
-## Modelo de quatro camadas
+provenance treats every claim a language model makes as something that must be proven, not asserted. Think of a journalist who doesn't just tell you what happened but hands you the original document. Every number shown to a user traces back, step by step, to the exact deterministic calculation that produced it — measurements, rules, decisions, all recorded and navigable.
 
-| Camada | Produzida por | Contém | Pode ser produzida por LLM? |
+## Four-layer model
+
+| Layer | Produced by | Contains | Can an LLM produce it? |
 |---|---|---|---|
-| **Measurement** | algoritmo determinístico | resultado numérico bruto, sem interpretação | Não |
-| **Finding** | regra determinística versionada | interpretação local, verdadeira independentemente do objetivo do usuário | Não |
-| **Assessment** | regra determinística versionada | decisão composta, condicionada a um objetivo declarado | Não |
-| **Claim** | modelo de linguagem | frase em português para leitura humana | Sim, e somente esta |
+| **Measurement** | deterministic algorithm | raw numeric result, no interpretation | No |
+| **Finding** | versioned deterministic rule | local interpretation, true regardless of user objective | No |
+| **Assessment** | versioned deterministic rule | composite decision, conditioned on a declared objective | No |
+| **Claim** | language model | human-readable sentence | Yes, and only this |
 
-## Configuração local
+The first three layers are fully deterministic and auditable. The numeric layer catches the most hallucinations in practice, since language models err mainly on numbers. Only the Claim layer is LLM-generated — and it can only describe what the layers below have already proven.
 
-### Pré-requisitos
+## Project structure
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) — gerenciador de pacotes
-- PostgreSQL 16 instalado localmente
-
-### Instalando o PostgreSQL 16 no Windows
-
-1. Baixe o instalador em <https://www.postgresql.org/download/windows/> (EDB installer).
-2. Execute o instalador. Quando pedir senha do usuário `postgres`, escolha uma senha e anote — você vai precisar dela.
-3. Confirme que o serviço está rodando: abra o **Gerenciador de Serviços** (services.msc) e procure `postgresql-x64-16`. O status deve ser **Em execução**.
-4. Opcionalmente, adicione `C:\Program Files\PostgreSQL\16\bin` ao PATH do sistema para usar `psql` no terminal.
-
-### Criando os bancos de dados
-
-Abra o **SQL Shell (psql)** — ou o pgAdmin — e execute:
-
-```sql
-CREATE DATABASE data_observatory;
-CREATE DATABASE data_observatory_test;
+```
+provenance/
+├── api/            # FastAPI — main.py, routers/, deps.py, schemas.py
+├── core/           # Domain model — model, composer, plugin, rules/, validation/
+├── db/             # Persistence — connection, pipeline, migrations/, repos/
+├── docs/           # SPEC.md, DECISIONS.md
+├── plugins/
+│   └── tabular/    # CSV/Parquet plugin (_digest, _plugin, _stats)
+├── schemas/        # Measurement JSON schemas
+├── scripts/        # Utility scripts and demo
+├── tests/          # Test suite (358 cases)
+└── web/            # React/Vite frontend
+    └── src/        # App.tsx, pages/, components/, hooks/, api/
 ```
 
-### Configuração do ambiente
+## Versions
+
+| Component | Version |
+|---|---|
+| Python | ≥ 3.12 (tested on 3.13) |
+| PostgreSQL | 16 |
+| pyarrow | 18.1.0 |
+| scipy | 1.18.0 |
+| FastAPI | 0.140.7 |
+| SQLAlchemy | 2.0.51 |
+| Alembic | 1.18.5 |
+| React | 19.2.7 |
+| TypeScript | 6.0.x |
+| Vite | 8.1.1 |
+
+## Tests
+
+358 cases across 8 files, covering `core`, `plugins`, `db`, and `api`:
+
+| File | Cases | What it covers |
+|---|---|---|
+| `test_tabular.py` | 100 | CSV/Parquet plugin (property-based via Hypothesis) |
+| `test_rules.py` | 74 | interpretation rules (Finding and Assessment) |
+| `test_model.py` | 68 | domain model (Measurement → Claim) |
+| `test_validation.py` | 48 | chain validation and composition |
+| `test_statement_fidelity.py` | 23 | Claim semantic fidelity |
+| `test_composer.py` | 22 | evidence chain composition |
+| `test_api.py` | 12 | REST API (FastAPI + httpx) |
+| `test_db.py` | 10 | persistence layer (psycopg3 + Alembic) |
+
+## Local setup
+
+### Prerequisites
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) — package manager
+- PostgreSQL 16 installed locally
+- Node.js 20+ (for the frontend)
+
+### Installing PostgreSQL 16 on Windows
+
+1. Download the installer at <https://www.postgresql.org/download/windows/> (EDB installer).
+2. Run the installer. When prompted for the `postgres` user password, note it down.
+3. Confirm the service is running: open **Services** (`services.msc`) and find `postgresql-x64-16`. Status should be **Running**.
+4. Optionally, add `C:\Program Files\PostgreSQL\16\bin` to the system PATH.
+
+### Creating the databases
+
+Open **SQL Shell (psql)** or pgAdmin and run:
+
+```sql
+CREATE DATABASE provenance;
+CREATE DATABASE provenance_test;
+```
+
+### Environment setup
 
 ```bash
 cp .env.example .env
 ```
 
-Edite `.env` se necessário (ajuste a senha do `postgres`):
+Edit `.env` to set your `postgres` password:
 
 ```
-DATABASE_URL=postgresql://postgres:SUA_SENHA@localhost:5432/data_observatory
-TEST_DATABASE_URL=postgresql://postgres:SUA_SENHA@localhost:5432/data_observatory_test
+DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/provenance
+TEST_DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/provenance_test
 ```
 
-### Instalando dependências e rodando as migrations
+### Installation
 
 ```bash
 uv sync
-
-# Banco principal
-uv run alembic upgrade head
-
-# Banco de testes
-uv run alembic -x url=postgresql://postgres:SENHA@localhost:5432/data_observatory_test upgrade head
 ```
 
-Substitua `SENHA` pela senha do usuário `postgres` escolhida durante a instalação. Se usou `postgres` (padrão), o comando fica:
+### Migrations
 
 ```bash
+# Main database
 uv run alembic upgrade head
-uv run alembic -x url=postgresql://postgres:postgres@localhost:5432/data_observatory_test upgrade head
+
+# Test database
+uv run alembic -x url=postgresql://postgres:YOUR_PASSWORD@localhost:5432/provenance_test upgrade head
 ```
 
-### Rodando os testes
-
-```bash
-uv run pytest
-```
-
-Se o arquivo `.env` existir no diretório do projeto, ele é carregado automaticamente pelo `conftest.py`. Com `TEST_DATABASE_URL` disponível, todos os 357 testes (incluindo 22 de banco/API) são executados. Sem ele, os testes de banco são pulados graciosamente.
-
-### Rodando o servidor da API
+### API
 
 ```bash
 uv run uvicorn api.main:app --reload
 ```
 
-A API fica disponível em <http://localhost:8000>. Documentação interativa em <http://localhost:8000/docs>.
+Available at <http://localhost:8000> — interactive docs at <http://localhost:8000/docs>.
 
-## Estrutura do projeto
-
-```
-core/           — modelo de dados (Measurement → Finding → Assessment → Claim)
-plugins/        — plugins de domínio (tabular: CSV + Parquet)
-db/             — camada de persistência (psycopg3, Alembic, repositórios)
-api/            — REST API (FastAPI)
-tests/          — suíte de testes (pytest + hypothesis)
-docs/           — decisões de design (DECISIONS.md)
-scripts/        — utilitários e demonstração (demo.py)
-```
-
-## Desenvolvimento
+### Frontend
 
 ```bash
-uv run ruff format .       # formata o código
-uv run ruff check .        # linting
-uv run mypy core db api tests  # verificação de tipos
-uv run pytest              # suíte completa
+cd web
+npm install
+npm run dev
+```
+
+Available at <http://localhost:5173>.
+
+### Tests
+
+```bash
+uv run pytest
+```
+
+With `.env` present and `TEST_DATABASE_URL` set, all 358 tests run (including database and API tests). Without it, database-dependent tests are skipped automatically.
+
+## Development
+
+```bash
+uv run ruff format .                      # format
+uv run ruff check .                       # lint
+uv run python -m mypy core db api tests   # type check
+uv run pytest                             # full suite
 ```
