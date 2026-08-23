@@ -203,8 +203,8 @@ def test_run_metrics_no_claims(client: TestClient, simple_csv_bytes: bytes) -> N
     assert r.status_code == 200
     m = r.json()
     assert m["run_id"] == run_id
-    assert m["total_claims"] == 0
-    assert m["total_passed"] == 0
+    assert m["counts"]["claims_passed"] == 0
+    assert m["total_rejections"] == 0
 
 
 def test_run_not_found(client: TestClient) -> None:
