@@ -14,11 +14,11 @@
   --color-accent: #5FB98A;
 
   --color-surface-lt: #F5F7F4;
-  --color-raised-lt: #FFFFFF;
-  --color-divider-lt: #DDE3DB;
+  --color-raised-lt: #EAEFE8;
+  --color-divider-lt: #D0D9CE;
   --color-text-lt: #1A2118;
-  --color-muted-lt: #6B7A69;
-  --color-accent-lt: #2C6E49;
+  --color-muted-lt: #5A6B58;
+  --color-accent-lt: #5FB98A;
 
   --color-fail: #E8756A;
   --color-warn: #C48B2F;
@@ -39,6 +39,12 @@ body {
 }
 
 body[data-theme="light"] {
+  --color-surface: var(--color-surface-lt);
+  --color-raised: var(--color-raised-lt);
+  --color-divider: var(--color-divider-lt);
+  --color-text: var(--color-text-lt);
+  --color-muted: var(--color-muted-lt);
+  --color-accent: var(--color-accent-lt);
   background-color: var(--color-surface-lt);
   color: var(--color-text-lt);
   color-scheme: light;
