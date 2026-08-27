@@ -8,6 +8,78 @@ interface Props {
   onClose: () => void
 }
 
+// ─── label maps ──────────────────────────────────────────────────────────────
+
+const GOAL_LABEL: Record<string, string> = {
+  modeling_readiness: 'Prontidão para Modelagem',
+  data_quality: 'Qualidade dos Dados',
+  general: 'Geral',
+}
+
+const VERDICT_LABEL: Record<string, string> = {
+  eligible: 'elegível',
+  needs_attention: 'requer atenção',
+  not_eligible: 'não elegível',
+  acceptable: 'aceitável',
+  marginal: 'marginal',
+  unacceptable: 'inaceitável',
+}
+
+const FINDING_TYPE_LABEL: Record<string, string> = {
+  'core.finding.missing_rate': 'Taxa de Ausentes',
+  'core.finding.distribution_shape': 'Forma da Distribuição',
+  'core.finding.duplicate_rate': 'Taxa de Duplicatas',
+  'core.finding.category_balance': 'Balanceamento de Categorias',
+  'core.finding.variable_association': 'Associação entre Variáveis',
+}
+
+const MEASUREMENT_TYPE_LABEL: Record<string, string> = {
+  'core.quality.missing': 'Qualidade: Valores Ausentes',
+  'core.quality.uniqueness': 'Qualidade: Unicidade',
+  'core.stats.normality': 'Estatística: Normalidade',
+  'core.stats.descriptive': 'Estatística: Descritiva',
+  'core.stats.frequency': 'Estatística: Frequência',
+  'core.stats.correlation': 'Estatística: Correlação',
+}
+
+const SCOPE_KIND_LABEL: Record<string, string> = {
+  column: 'coluna',
+  dataset: 'dataset',
+  pair: 'par',
+  file: 'arquivo',
+  channel: 'canal',
+  segment: 'segmento',
+}
+
+const POLICY_KEY_LABEL: Record<string, string> = {
+  missing_warn_threshold: 'limiar de atenção (ausentes)',
+  missing_fail_threshold: 'limiar de falha (ausentes)',
+  duplicate_warn_threshold: 'limiar de atenção (duplicatas)',
+}
+
+const PARAM_KEY_LABEL: Record<string, string> = {
+  warn_threshold: 'limiar de atenção',
+  fail_threshold: 'limiar de falha',
+  threshold_ok: 'limiar ok',
+  threshold_warn: 'limiar atenção',
+  skewness_threshold_ok: 'limiar assimetria ok',
+  skewness_threshold_warn: 'limiar assimetria atenção',
+  emit_threshold: 'limiar de emissão',
+  categorical_unique_rate_cutoff: 'corte de unicidade',
+  categorical_unique_count_cutoff: 'corte de contagem',
+  null_sentinels_applied: 'sentinelas de nulo',
+}
+
+function labelGoal(goal: string) { return GOAL_LABEL[goal] ?? goal }
+function labelVerdict(v: string) { return VERDICT_LABEL[v] ?? v }
+function labelFindingType(t: string) { return FINDING_TYPE_LABEL[t] ?? t }
+function labelMeasurementType(t: string) { return MEASUREMENT_TYPE_LABEL[t] ?? t }
+function labelScopeKind(k: string) { return SCOPE_KIND_LABEL[k] ?? k }
+function labelPolicyKey(k: string) { return POLICY_KEY_LABEL[k] ?? k }
+function labelParamKey(k: string) { return PARAM_KEY_LABEL[k] ?? k }
+
+// ─── component ───────────────────────────────────────────────────────────────
+
 export function EvidenceDrawer({ claimId, onClose }: Props) {
   const [chain, setChain] = useState<EvidenceChain | null>(null)
   const [loading, setLoading] = useState(false)
@@ -68,7 +140,7 @@ export function EvidenceDrawer({ claimId, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="Cadeia de evidências"
-        className={`fixed top-0 right-0 z-50 h-screen w-full md:w-[480px] bg-[var(--color-raised)] border-l border-[var(--color-divider)] flex flex-col transition-transform duration-200 ${
+        className={`fixed top-0 right-0 z-50 h-screen w-full md:w-[680px] bg-[var(--color-raised)] border-l border-[var(--color-divider)] flex flex-col transition-transform duration-200 ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -117,7 +189,7 @@ function ChainTree({ chain }: { chain: EvidenceChain }) {
   if (!chain.claim) {
     return (
       <p className="font-mono text-sm text-[var(--color-muted)]">
-        cadeia sem claim raiz
+        cadeia sem afirmação raiz
       </p>
     )
   }
@@ -164,12 +236,10 @@ function ChainTree({ chain }: { chain: EvidenceChain }) {
       {/* Claim */}
       <div>
         <LayerChip layer="claim" />
-        <p className="font-mono text-[10px] text-[var(--color-muted)] mt-1 mb-2 break-all">
-          {claim.id}
-        </p>
-        <p className="font-serif text-[18px] leading-[1.55] text-[var(--color-text)]">
+        <p className="font-serif text-[18px] leading-[1.55] text-[var(--color-text)] mt-2">
           {claim.text}
         </p>
+        <TechId value={claim.id} />
       </div>
 
       {/* Assessments */}
@@ -193,24 +263,23 @@ function AssessmentNode({ assessment, findings }: AssessmentWithChildren) {
           <LayerChip layer="assessment" />
           <SeverityBadge severity={assessment.severity as 'ok' | 'warn' | 'fail'} />
         </div>
-        <p className="font-mono text-[10px] text-[var(--color-muted)] mb-2 break-all">
-          {assessment.id}
+        <p className="font-sans text-sm font-medium text-[var(--color-text)] mb-0.5">
+          {labelGoal(assessment.goal)}
         </p>
-        <div className="font-mono text-xs space-y-1 mb-2">
-          <KVRow label="goal" value={assessment.goal} />
-          <KVRow label="verdict" value={assessment.verdict} />
-          <KVRow label="regra" value={`${assessment.rule} · ${assessment.rule_version}`} />
-        </div>
+        <p className="font-mono text-xs text-[var(--color-muted)] mb-2">
+          resultado: <span className="text-[var(--color-text)]">{labelVerdict(assessment.verdict)}</span>
+        </p>
+        <p className="font-mono text-[10px] text-[var(--color-muted)] mb-2">
+          regra: {assessment.rule} · v{assessment.rule_version}
+        </p>
         {Object.keys(assessment.policy).length > 0 && (
-          <div>
-            <span className="font-mono text-[10px] text-[var(--color-muted)] uppercase tracking-wider">
-              política
-            </span>
-            <div className="mt-1">
-              <KVPairs data={assessment.policy} />
-            </div>
-          </div>
+          <KVPairs
+            data={assessment.policy}
+            labelKey={labelPolicyKey}
+            title="política aplicada"
+          />
         )}
+        <TechId value={assessment.id} />
       </div>
 
       {findings.map(({ finding, measurements }) => (
@@ -221,6 +290,10 @@ function AssessmentNode({ assessment, findings }: AssessmentWithChildren) {
 }
 
 function FindingNode({ finding, measurements }: FindingWithMeasurements) {
+  const scopeDesc = finding.scope.refs.length > 0
+    ? `${labelScopeKind(finding.scope.kind)}: ${finding.scope.refs.join(' × ')}`
+    : labelScopeKind(finding.scope.kind)
+
   return (
     <div className="pl-4 border-l-2 border-[var(--color-muted)] space-y-4">
       <div>
@@ -228,14 +301,24 @@ function FindingNode({ finding, measurements }: FindingWithMeasurements) {
           <LayerChip layer="finding" />
           <SeverityBadge severity={finding.severity as 'ok' | 'warn' | 'fail'} />
         </div>
-        <p className="font-mono text-[10px] text-[var(--color-muted)] mb-2 break-all">
-          {finding.id}
+        <p className="font-sans text-sm font-medium text-[var(--color-text)] mb-0.5">
+          {labelFindingType(finding.type)}
         </p>
-        <p className="font-mono text-sm text-[var(--color-text)] mb-2">{finding.statement}</p>
-        <p className="font-mono text-[11px] text-[var(--color-muted)] mb-2">
-          {finding.rule} · {finding.rule_version}
+        <p className="font-mono text-[11px] text-[var(--color-muted)] mb-2">{scopeDesc}</p>
+        <p className="font-mono text-xs text-[var(--color-text)] mb-2 leading-relaxed">
+          {finding.statement}
         </p>
-        {Object.keys(finding.params).length > 0 && <KVPairs data={finding.params} />}
+        <p className="font-mono text-[10px] text-[var(--color-muted)] mb-2">
+          regra: {finding.rule} · v{finding.rule_version}
+        </p>
+        {Object.keys(finding.params).length > 0 && (
+          <KVPairs
+            data={finding.params}
+            labelKey={labelParamKey}
+            title="parâmetros usados"
+          />
+        )}
+        <TechId value={finding.id} />
       </div>
 
       {measurements.map((m) => (
@@ -247,18 +330,23 @@ function FindingNode({ finding, measurements }: FindingWithMeasurements) {
 
 function MeasurementNode({ measurement: m }: { measurement: MeasurementOut }) {
   const prov = m.provenance
+  const scopeDesc = m.scope.refs.length > 0
+    ? `${labelScopeKind(m.scope.kind)}: ${m.scope.refs.join(' × ')}`
+    : labelScopeKind(m.scope.kind)
+
   return (
     <div className="pl-4 border-l-2 border-[var(--color-divider)] space-y-3">
       <div>
         <div className="flex items-center gap-2 mb-1">
           <LayerChip layer="measurement" />
         </div>
-        <p className="font-mono text-[10px] text-[var(--color-muted)] mb-2 break-all">{m.id}</p>
-        <p className="font-mono text-xs text-[var(--color-text)] mb-1">{m.type}</p>
-        <p className="font-mono text-[11px] text-[var(--color-muted)] mb-3">
-          {m.scope.kind} · {m.scope.refs.join(', ')}
+        <p className="font-sans text-sm font-medium text-[var(--color-text)] mb-0.5">
+          {labelMeasurementType(m.type)}
         </p>
-        {Object.keys(m.payload).length > 0 && <KVPairs data={m.payload} />}
+        <p className="font-mono text-[11px] text-[var(--color-muted)] mb-3">{scopeDesc}</p>
+        {Object.keys(m.payload).length > 0 && (
+          <KVPairs data={m.payload} title="resultado calculado" />
+        )}
 
         <div className="mt-3 border border-[var(--color-divider)] rounded px-3 pt-2 pb-3 space-y-1.5">
           <p className="font-mono text-[10px] text-[var(--color-muted)] uppercase tracking-widest mb-2">
@@ -268,16 +356,17 @@ function MeasurementNode({ measurement: m }: { measurement: MeasurementOut }) {
           <ProvLine label="versão" value={prov.version} />
           <ProvLine label="duração" value={`${prov.duration_ms}ms`} />
           {Object.keys(prov.params).length > 0 && (
-            <ProvLine label="params" value={JSON.stringify(prov.params)} />
+            <ProvLine label="parâmetros" value={JSON.stringify(prov.params)} />
           )}
           {prov.seed !== null && <ProvLine label="seed" value={String(prov.seed)} />}
           <div className="flex flex-col gap-0.5 pt-0.5">
-            <span className="font-mono text-[10px] text-[var(--color-muted)]">input_digest</span>
+            <span className="font-mono text-[10px] text-[var(--color-muted)]">digest de entrada</span>
             <span className="font-mono text-[11px] text-[var(--color-text)] break-all">
               {prov.input_digest}
             </span>
           </div>
         </div>
+        <TechId value={m.id} />
       </div>
     </div>
   )
@@ -287,11 +376,11 @@ function MeasurementNode({ measurement: m }: { measurement: MeasurementOut }) {
 
 type Layer = 'claim' | 'assessment' | 'finding' | 'measurement'
 
-const layerLabel: Record<Layer, string> = {
-  claim: 'CLAIM',
-  assessment: 'ASSESSMENT',
-  finding: 'FINDING',
-  measurement: 'MEASUREMENT',
+const LAYER_LABEL_PT: Record<Layer, string> = {
+  claim: 'AFIRMAÇÃO',
+  assessment: 'AVALIAÇÃO',
+  finding: 'VERIFICAÇÃO',
+  measurement: 'MEDIÇÃO',
 }
 
 const layerColor: Record<Layer, string> = {
@@ -303,20 +392,17 @@ const layerColor: Record<Layer, string> = {
 
 function LayerChip({ layer }: { layer: Layer }) {
   return (
-    <span
-      className={`font-mono text-[10px] uppercase tracking-widest ${layerColor[layer]}`}
-    >
-      {layerLabel[layer]}
+    <span className={`font-mono text-[10px] uppercase tracking-widest ${layerColor[layer]}`}>
+      {LAYER_LABEL_PT[layer]}
     </span>
   )
 }
 
-function KVRow({ label, value }: { label: string; value: string }) {
+function TechId({ value }: { value: string }) {
   return (
-    <div className="flex gap-2 items-baseline">
-      <span className="text-[var(--color-muted)] shrink-0">{label}</span>
-      <span className="text-[var(--color-text)]">{value}</span>
-    </div>
+    <p className="font-mono text-[9px] text-[var(--color-divider)] mt-2 break-all select-all">
+      {value}
+    </p>
   )
 }
 
@@ -343,17 +429,34 @@ function formatValue(v: unknown): string {
   return String(v)
 }
 
-function KVPairs({ data }: { data: Record<string, unknown> }) {
+function KVPairs({
+  data,
+  title,
+  labelKey,
+}: {
+  data: Record<string, unknown>
+  title?: string
+  labelKey?: (k: string) => string
+}) {
   const entries = Object.entries(data)
   if (entries.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-      {entries.map(([k, v]) => (
-        <div key={k} className="flex items-baseline gap-1.5">
-          <span className="font-mono text-[10px] text-[var(--color-muted)]">{k}</span>
-          <span className="font-mono text-[11px] text-[var(--color-text)]">{formatValue(v)}</span>
-        </div>
-      ))}
+    <div className="mb-2">
+      {title && (
+        <p className="font-mono text-[10px] text-[var(--color-muted)] uppercase tracking-wider mb-1">
+          {title}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+        {entries.map(([k, v]) => (
+          <div key={k} className="flex items-baseline gap-1.5">
+            <span className="font-mono text-[10px] text-[var(--color-muted)]">
+              {labelKey ? labelKey(k) : k}
+            </span>
+            <span className="font-mono text-[11px] text-[var(--color-text)]">{formatValue(v)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

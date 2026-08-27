@@ -10,12 +10,12 @@ import { SummaryPanel } from '../components/SummaryPanel'
 type Tab = 'report' | 'validation' | 'summary'
 
 const TAB_LABELS: Record<Tab, string> = {
+  summary: 'Resumo',
   report: 'Laudo',
   validation: 'Validação',
-  summary: 'Resumo',
 }
 
-const TABS: Tab[] = ['report', 'validation', 'summary']
+const TABS: Tab[] = ['summary', 'report', 'validation']
 
 const GOAL_LABELS: Record<string, string> = {
   data_quality: 'QUALIDADE',
@@ -174,7 +174,7 @@ export function Report() {
   const [report, setReport] = useState<ReportOut | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<Tab>('report')
+  const [activeTab, setActiveTab] = useState<Tab>('summary')
 
   useEffect(() => {
     if (!runId) return
