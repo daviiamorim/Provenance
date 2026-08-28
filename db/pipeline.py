@@ -1,26 +1,34 @@
-"""Pipeline orchestration: cheap capabilities → findings → assessments → persist.
+"""Pipeline: capabilities → findings → assessments → claims → persist.
 
 Called by the API after the user confirms the domain plugin. Returns run_id.
-No I/O or LLM calls happen here; Claims are generated separately by the
-Composer (core/composer.py) and persisted via db.repos.claims.
+Requires ANTHROPIC_API_KEY to generate Claims; if absent, the pipeline
+completes without claims (findings and assessments are still persisted).
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
+import os
 from pathlib import Path
 
+from core.composer import generate_report
+from core.llm import ClaudeLanguageModel
 from core.model import Assessment, Finding, Measurement, derive_run_id
 from core.plugin import Source
 from core.rules import RULE_REGISTRY
 from db.connection import Conn
 from db.repos import assessments as assessment_repo
+from db.repos import claims as claims_repo
 from db.repos import datasets as dataset_repo
 from db.repos import findings as finding_repo
 from db.repos import measurements as measurement_repo
 from db.repos import memberships
+from db.repos import rejections as rejection_repo
 from db.repos import runs as run_repo
 from plugins.tabular import TabularPlugin
+
+_log = logging.getLogger(__name__)
 
 # Numeric Arrow types that support descriptive / normality / correlation.
 _NUMERIC_DTYPES: frozenset[str] = frozenset(
@@ -149,5 +157,33 @@ def run_pipeline(
     for a in all_assessments:
         assessment_repo.upsert(conn, a)
         memberships.upsert_assessment(conn, run_id, a.id)
+
+    # ── composer (LLM claims) ─────────────────────────────────────────────────
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        _log.warning("ANTHROPIC_API_KEY not set — skipping claim generation")
+        return run_id
+
+    try:
+        llm = ClaudeLanguageModel()
+        report = generate_report(
+            findings=findings,
+            assessments=all_assessments,
+            composer_model=llm,
+            judge_model=llm,
+            run_id=run_id,
+            dataset_id=dataset_id,
+        )
+        for claim in report.claims:
+            claims_repo.upsert(conn, claim)
+        for rec in report.rejected:
+            rejection_repo.upsert(conn, run_id, rec)
+        _log.info(
+            "composer: %d claims, %d rejections",
+            len(report.claims),
+            len(report.rejected),
+        )
+    except Exception:
+        _log.exception("composer failed — claims not persisted")
 
     return run_id

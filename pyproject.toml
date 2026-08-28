@@ -20,6 +20,7 @@ dependencies = [
     "pydantic>=2.7",
     "python-multipart>=0.0.9",
     "python-dotenv>=1.2.2",
+    "anthropic>=0.40",
 ]
 
 [project.entry-points."data_observatory.plugins"]
@@ -93,6 +94,7 @@ ignore = [
     "S110",    # try/except/pass — intentional for plugin capability errors
     "C901",    # complexity — pipeline orchestration is inherently a sequence of steps
     "PLR0912", # too many branches — same reason
+    "PLR0915", # too many statements — same reason
 ]
 
 # ── Mypy ──────────────────────────────────────────────────────────────────────
