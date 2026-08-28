@@ -100,6 +100,15 @@ export interface RunMetrics {
   rejections_semantic: number
 }
 
+export interface UploadOut {
+  dataset_id: string
+  candidates: Array<{ plugin_name: string; confidence: number; evidence: string }>
+}
+
+export interface RunCreateOut {
+  run_id: string
+}
+
 export interface DatasetOut {
   id: string
   created_at: string

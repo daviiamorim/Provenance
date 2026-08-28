@@ -17,28 +17,27 @@ function formatDate(iso: string): string {
   }).format(new Date(iso))
 }
 
+type UploadStep = 'idle' | 'uploading' | 'analyzing'
+
 function UploadZone({ onUploaded }: { onUploaded: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
+  const navigate = useNavigate()
+  const [step, setStep] = useState<UploadStep>('idle')
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
 
   async function handleFile(file: File) {
-    setUploading(true)
+    setStep('uploading')
     setUploadError(null)
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await fetch('/api/datasets/upload', { method: 'POST', body: form })
-      if (!res.ok) {
-        const text = await res.text().catch(() => res.statusText)
-        throw new Error(`${res.status} ${text}`)
-      }
+      const { dataset_id } = await api.uploadDataset(file)
+      setStep('analyzing')
+      const { run_id } = await api.createRun(dataset_id)
       onUploaded()
+      navigate(`/report/${run_id}`)
     } catch (e: unknown) {
       setUploadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setUploading(false)
+      setStep('idle')
     }
   }
 
@@ -63,7 +62,7 @@ function UploadZone({ onUploaded }: { onUploaded: () => void }) {
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        disabled={uploading}
+        disabled={step !== 'idle'}
         className="w-full border-2 border-dashed rounded-lg px-6 py-8 text-center transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         style={{
           borderColor: dragging ? 'var(--color-accent)' : 'var(--color-divider)',
@@ -71,10 +70,14 @@ function UploadZone({ onUploaded }: { onUploaded: () => void }) {
         }}
       >
         <p className="font-mono text-sm text-[var(--color-accent)] mb-1">
-          {uploading ? 'enviando…' : '+ enviar dataset'}
+          {step === 'uploading' && 'enviando arquivo…'}
+          {step === 'analyzing' && 'analisando dataset…'}
+          {step === 'idle' && '+ enviar dataset'}
         </p>
         <p className="font-mono text-[11px] text-[var(--color-muted)]">
-          arraste um arquivo CSV aqui ou clique para selecionar
+          {step === 'analyzing'
+            ? 'isso pode levar alguns segundos'
+            : 'arraste um arquivo CSV aqui ou clique para selecionar'}
         </p>
       </button>
 
@@ -84,6 +87,7 @@ function UploadZone({ onUploaded }: { onUploaded: () => void }) {
         accept=".csv,.tsv,.parquet,.zip"
         className="hidden"
         onChange={onInputChange}
+        disabled={step !== 'idle'}
         aria-label="Selecionar arquivo para upload"
       />
 
