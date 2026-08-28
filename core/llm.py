@@ -23,6 +23,28 @@ class LanguageModel(Protocol):
     def complete(self, prompt: str) -> str: ...
 
 
+class ClaudeLanguageModel:
+    """Anthropic Claude backend for the Composer and Validator."""
+
+    def __init__(
+        self, model: str = "claude-haiku-4-5-20251001", max_tokens: int = 2048
+    ) -> None:
+        import anthropic  # noqa: PLC0415 — deferred so anthropic is optional
+
+        self._client = anthropic.Anthropic()
+        self._model = model
+        self._max_tokens = max_tokens
+
+    def complete(self, prompt: str) -> str:
+        message = self._client.messages.create(
+            model=self._model,
+            max_tokens=self._max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        block = message.content[0]
+        return block.text if hasattr(block, "text") else str(block)
+
+
 class StubLanguageModel:
     """Deterministic stub: returns responses in sequence, cycling if needed.
 
