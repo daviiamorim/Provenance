@@ -173,24 +173,29 @@ class TestComposerIsolation:
 # ── generation and claim creation ─────────────────────────────────────────────
 
 
+def _pair(stmt: str, expl: str = "Explicação de exemplo.") -> str:
+    """Build a well-formed AFIRMAÇÃO/EXPLICAÇÃO block for StubLanguageModel."""
+    return f"AFIRMAÇÃO: {stmt}\nEXPLICAÇÃO: {expl}"
+
+
 class TestReportGeneration:
     def test_correct_sentence_becomes_claim(self) -> None:
         fnd = _make_finding("renda", 0.076)
-        text = f"A coluna renda tem taxa de ausência de 7,6% [{fnd.id}]."
-        result = _run_report([fnd], [], [text])
+        stmt = f"A coluna renda tem taxa de ausência de 7,6% [{fnd.id}]."
+        expl = "A coluna renda apresenta 7,6% de valores ausentes."
+        result = _run_report([fnd], [], [_pair(stmt, expl)])
         assert len(result.claims) == 1
-        assert result.claims[0].text == text
+        assert result.claims[0].text == stmt
+        assert result.claims[0].explanation == expl
 
     def test_claim_has_correct_supports(self) -> None:
         fnd = _make_finding("renda", 0.076)
-        text = f"Taxa elevada [{fnd.id}]."
-        result = _run_report([fnd], [], [text])
+        result = _run_report([fnd], [], [_pair(f"Taxa elevada [{fnd.id}].")])
         assert fnd.id in result.claims[0].supports
 
     def test_claim_validation_status_is_passed(self) -> None:
         fnd = _make_finding("renda", 0.076)
-        text = f"Taxa elevada [{fnd.id}]."
-        result = _run_report([fnd], [], [text])
+        result = _run_report([fnd], [], [_pair(f"Taxa elevada [{fnd.id}].")])
         assert result.claims[0].validation.status == ValidationStatus.PASSED
 
     def test_multiple_sentences_each_become_claim(self) -> None:
@@ -198,23 +203,31 @@ class TestReportGeneration:
         fnd2 = _make_finding("col_b", 0.20)
         s1 = f"Coluna col_a tem 10,0% ausência [{fnd1.id}]."
         s2 = f"Coluna col_b tem 20,0% ausência [{fnd2.id}]."
-        result = _run_report([fnd1, fnd2], [], [f"{s1} {s2}"])
+        response = f"{_pair(s1)}\n\n{_pair(s2)}"
+        result = _run_report([fnd1, fnd2], [], [response])
         assert len(result.claims) == 2
 
     def test_claim_id_is_deterministic(self) -> None:
         fnd = _make_finding("renda", 0.076)
-        text = f"Taxa elevada [{fnd.id}]."
-        r1 = _run_report([fnd], [], [text])
-        r2 = _run_report([fnd], [], [text])
+        resp = _pair(f"Taxa elevada [{fnd.id}].")
+        r1 = _run_report([fnd], [], [resp])
+        r2 = _run_report([fnd], [], [resp])
         assert r1.claims[0].id == r2.claims[0].id
 
     def test_assessment_citation_creates_valid_claim(self) -> None:
         fnd = _make_finding()
         ast = _make_assessment(fnd)
-        text = f"Qualidade inaceitável [{ast.id}]."
-        result = _run_report([fnd], [ast], [text])
+        result = _run_report(
+            [fnd], [ast], [_pair(f"Qualidade inaceitável [{ast.id}].")]
+        )
         assert len(result.claims) == 1
         assert ast.id in result.claims[0].supports
+
+    def test_explanation_preserved_on_claim(self) -> None:
+        fnd = _make_finding("col_x", 0.15)
+        expl = "Detalhe específico da coluna col_x."
+        result = _run_report([fnd], [], [_pair(f"Problema [{fnd.id}].", expl)])
+        assert result.claims[0].explanation == expl
 
 
 # ── rejection flow ────────────────────────────────────────────────────────────
@@ -227,8 +240,8 @@ class TestRejectionFlow:
             [fnd],
             [],
             [
-                "Sem citação alguma.",  # attempt 1 — no citation
-                f"Com citação [{fnd.id}].",  # rewrite — passes
+                _pair("Sem citação alguma."),  # attempt 1 — no citation
+                f"Com citação [{fnd.id}].",  # rewrite (single sentence) — passes
             ],
         )
         assert len(result.claims) == 1
@@ -243,7 +256,7 @@ class TestRejectionFlow:
             [fnd],
             [],
             [
-                f"Cita ID inexistente [{bad_id}].",
+                _pair(f"Cita ID inexistente [{bad_id}]."),
                 f"Cita ID válido [{fnd.id}].",
             ],
         )
@@ -254,7 +267,7 @@ class TestRejectionFlow:
         result = _run_report(
             [fnd],
             [],
-            ["Sem citação.", "Sem citação."],
+            [_pair("Sem citação."), "Sem citação."],
         )
         assert result.metrics.discarded == 1
         assert result.claims == []
@@ -264,7 +277,7 @@ class TestRejectionFlow:
         result = _run_report(
             [fnd],
             [],
-            ["Sem citação.", "Sem citação."],
+            [_pair("Sem citação."), "Sem citação."],
         )
         assert len(result.rejected) == 2
         assert result.rejected[0].attempt == 1
@@ -276,14 +289,14 @@ class TestRejectionFlow:
         result = _run_report(
             [fnd],
             [],
-            ["Sem citação.", good],
+            [_pair("Sem citação."), good],
         )
         assert len(result.claims) == 1
         assert result.claims[0].validation.attempts == 2
 
     def test_discarded_sentence_not_in_claims(self) -> None:
         fnd = _make_finding()
-        result = _run_report([fnd], [], ["Sem citação.", "Sem citação."])
+        result = _run_report([fnd], [], [_pair("Sem citação."), "Sem citação."])
         claim_texts = [c.text for c in result.claims]
         assert all("Sem citação" not in t for t in claim_texts)
 
@@ -296,7 +309,8 @@ class TestMetrics:
         fnd = _make_finding()
         s1 = f"Ok [{fnd.id}]."
         s2 = f"Ok também [{fnd.id}]."
-        result = _run_report([fnd], [], [f"{s1} {s2}"])
+        response = f"{_pair(s1)}\n\n{_pair(s2)}"
+        result = _run_report([fnd], [], [response])
         assert result.metrics.total_sentences == 2
 
     def test_rejected_layer1_counts_correctly(self) -> None:
@@ -304,23 +318,23 @@ class TestMetrics:
         result = _run_report(
             [fnd],
             [],
-            ["Sem citação.", f"Com citação [{fnd.id}]."],
+            [_pair("Sem citação."), f"Com citação [{fnd.id}]."],
         )
         assert result.metrics.rejected_layer1 == 1
 
     def test_discarded_counted_separately_from_rejected(self) -> None:
         fnd = _make_finding()
-        result = _run_report([fnd], [], ["Sem citação.", "Sem citação."])
+        result = _run_report([fnd], [], [_pair("Sem citação."), "Sem citação."])
         assert result.metrics.discarded == 1
         assert result.metrics.rejected_layer1 == 2  # both attempts rejected L1
 
     def test_discard_rate_on_all_discarded(self) -> None:
         fnd = _make_finding()
-        result = _run_report([fnd], [], ["Sem citação.", "Sem citação."])
+        result = _run_report([fnd], [], [_pair("Sem citação."), "Sem citação."])
         assert result.metrics.discard_rate == 1.0
 
     def test_rejection_rate_by_layer_keys(self) -> None:
         fnd = _make_finding()
-        result = _run_report([fnd], [], [f"Ok [{fnd.id}]."])
+        result = _run_report([fnd], [], [_pair(f"Ok [{fnd.id}].")])
         rates = result.metrics.rejection_rate_by_layer
         assert set(rates) == {"syntactic", "numeric", "semantic"}

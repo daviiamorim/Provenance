@@ -126,6 +126,7 @@ class ClaimOut(BaseModel):
     dataset_id: str
     run_id: str
     text: str
+    explanation: str = ""
     supports: list[str]
     validation: ValidationRecordOut
 
@@ -137,6 +138,7 @@ class ClaimOut(BaseModel):
             dataset_id=c.dataset_id,
             run_id=c.run_id,
             text=c.text,
+            explanation=getattr(c, "explanation", ""),
             supports=list(c.supports),
             validation=ValidationRecordOut(
                 status=v.status.value,
@@ -227,6 +229,7 @@ class RunMetrics(BaseModel):
 class ClaimSummary(BaseModel):
     id: str
     text: str
+    explanation: str = ""
     supports: list[str]
     severity: str
 

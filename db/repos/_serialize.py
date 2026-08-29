@@ -155,6 +155,7 @@ def row_to_claim(row: dict[str, Any]) -> Claim:
         dataset_id=str(row["dataset_id"]),
         run_id=str(row["run_id"]),
         text=str(row["text"]),
+        explanation=str(row.get("explanation", "")),
         supports=tuple(str(x) for x in row["supports"]),
         validation=dict_to_validation(dict(row["validation"])),
     )

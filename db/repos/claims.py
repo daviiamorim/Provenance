@@ -16,8 +16,9 @@ from db.repos._serialize import row_to_claim, validation_to_dict
 def upsert(conn: Conn, c: Claim) -> None:
     conn.execute(
         """
-        INSERT INTO claims (id, dataset_id, run_id, text, supports, validation)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO claims
+            (id, dataset_id, run_id, text, explanation, supports, validation)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (id) DO NOTHING
         """,
         (
@@ -25,6 +26,7 @@ def upsert(conn: Conn, c: Claim) -> None:
             c.dataset_id,
             c.run_id,
             c.text,
+            c.explanation,
             list(c.supports),
             Jsonb(validation_to_dict(c.validation)),
         ),
