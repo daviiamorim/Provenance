@@ -232,6 +232,7 @@ def get_report(run_id: str, conn: Annotated[Conn, Depends(get_db)]) -> ReportOut
             ClaimSummary(
                 id=claim.id,
                 text=claim.text,
+                explanation=claim.explanation,
                 supports=list(claim.supports),
                 severity=_max_severity(claim.supports),
             )

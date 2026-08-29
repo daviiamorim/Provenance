@@ -536,6 +536,7 @@ class Claim:
     text: str
     supports: tuple[str, ...]
     validation: ValidationRecord
+    explanation: str = ""
 
     def __post_init__(self) -> None:
         if not self.supports:
@@ -551,6 +552,7 @@ class Claim:
         text: str,
         supports: tuple[str, ...],
         validation: ValidationRecord,
+        explanation: str = "",
     ) -> Claim:
         id_ = derive_claim_id(run_id, text, supports)
         return cls(
@@ -560,6 +562,7 @@ class Claim:
             text=text,
             supports=supports,
             validation=validation,
+            explanation=explanation,
         )
 
 

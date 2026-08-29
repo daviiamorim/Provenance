@@ -86,17 +86,17 @@ def _build_generation_prompt(
 ) -> str:
     sources = _serialize_sources(findings, assessments)
     return (
-        "Você é um analista de dados. Redija um laudo técnico conciso sobre a "
-        "qualidade do dataset com base EXCLUSIVAMENTE nas conclusões abaixo.\n\n"
-        "REGRAS OBRIGATÓRIAS:\n"
-        "1. Cada frase declarativa deve citar pelo menos um ID entre colchetes, "
-        "ex: [fnd-abc123].\n"
-        "2. Não introduza nenhuma afirmação não sustentada por um ID citado.\n"
-        "3. Escreva em português, de forma clara e objetiva.\n"
-        "4. Separe as frases com ponto final.\n\n"
+        "Você é um analista de dados. Com base EXCLUSIVAMENTE nas conclusões "
+        "abaixo, escreva uma afirmação por conclusão relevante.\n\n"
+        "FORMATO OBRIGATÓRIO (um bloco por afirmação, separados por linha em branco):\n"
+        "AFIRMAÇÃO: <frase declarativa com pelo menos um ID citado, ex: [fnd-abc123]>\n"
+        "EXPLICAÇÃO: <detalhamento em linguagem simples, sem citar IDs>\n\n"
+        "REGRAS:\n"
+        "1. Cada AFIRMAÇÃO deve conter pelo menos um ID entre colchetes.\n"
+        "2. A EXPLICAÇÃO nunca contém IDs — só texto em português claro.\n"
+        "3. Não introduza informações não sustentadas pelos IDs citados.\n\n"
         f"{sources}\n"
-        "---\n"
-        "Laudo:"
+        "---"
     )
 
 
@@ -120,23 +120,31 @@ def _build_rewrite_prompt(
     )
 
 
-# ── sentence splitting ────────────────────────────────────────────────────────
+# ── pair parsing ─────────────────────────────────────────────────────────────
 
 
-def _split_sentences(text: str) -> list[str]:
-    """Split text into sentences on period/exclamation/question + whitespace."""
-    raw = re.split(
-        r"(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\[\"])",
-        text.strip(),
-    )
-    result: list[str] = []
-    for raw_part in raw:
-        stripped = raw_part.strip()
-        if stripped:
-            ends_ok = stripped.endswith((".", "!", "?"))
-            sentence = stripped if ends_ok else stripped + "."
-            result.append(sentence)
-    return result
+def _parse_claim_pairs(text: str) -> list[tuple[str, str]]:
+    """Parse LLM output into (statement, explanation) pairs.
+
+    Expects blocks separated by blank lines, each with AFIRMAÇÃO: and
+    optionally EXPLICAÇÃO: lines. Blocks without AFIRMAÇÃO: are skipped.
+    """
+    pairs: list[tuple[str, str]] = []
+    blocks = re.split(r"\n{2,}", text.strip())
+    for block in blocks:
+        stmt = ""
+        expl = ""
+        for line in block.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("AFIRMAÇÃO:"):
+                stmt = stripped[len("AFIRMAÇÃO:") :].strip()
+            elif stripped.startswith("EXPLICAÇÃO:"):
+                expl = stripped[len("EXPLICAÇÃO:") :].strip()
+        if stmt:
+            if not stmt.endswith((".", "!", "?")):
+                stmt += "."
+            pairs.append((stmt, expl))
+    return pairs
 
 
 # ── result type ───────────────────────────────────────────────────────────────
@@ -171,7 +179,7 @@ def generate_report(
     generation_prompt = _build_generation_prompt(findings, assessments)
 
     raw_text = composer_model.complete(generation_prompt)
-    sentences = _split_sentences(raw_text)
+    pairs = _parse_claim_pairs(raw_text)
 
     claims: list[Claim] = []
     rejected_records: list[RejectionRecord] = []
@@ -182,8 +190,8 @@ def generate_report(
     }
     discarded = 0
 
-    for sentence in sentences:
-        current = sentence
+    for statement, explanation in pairs:
+        current = statement
 
         for attempt in range(_MAX_ATTEMPTS):
             passed, checks = validator.validate(current, findings, assessments)
@@ -201,13 +209,14 @@ def generate_report(
                         dataset_id=dataset_id,
                         run_id=run_id,
                         text=current,
+                        explanation=explanation,
                         supports=cited_ids,
                         validation=record,
                     )
                 )
                 break
 
-            # Rejection
+            # Rejection — rewrite targets only the statement; explanation is preserved
             failed = checks[-1]
             layer_counts[failed.layer.value] += 1
             rejected_records.append(
@@ -236,7 +245,7 @@ def generate_report(
                 discarded += 1
 
     metrics = ValidationMetrics(
-        total_sentences=len(sentences),
+        total_sentences=len(pairs),
         rejected_layer1=layer_counts["syntactic"],
         rejected_layer2=layer_counts["numeric"],
         rejected_layer3=layer_counts["semantic"],
