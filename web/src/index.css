@@ -1,28 +1,43 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-serif: 'Fraunces', ui-serif, Georgia, serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  --color-surface: #101511;
-  --color-raised: #161c17;
-  --color-divider: #1E2820;
-  --color-text: #E4EAE2;
-  --color-muted: #647065;
-  --color-accent: #5FB98A;
+  /* Legacy tokens — referenced by existing components */
+  --color-surface: #f7f6f1;
+  --color-raised: #ffffff;
+  --color-divider: #dcdbd2;
+  --color-text: #16211c;
+  --color-muted: #7c857f;
+  --color-accent: #1d9e75;
+  --color-fail: #a32d2d;
+  --color-warn: #854f0b;
+  --color-ok: #3b6d11;
 
-  --color-surface-lt: #F5F7F4;
-  --color-raised-lt: #FFFFFF;
-  --color-divider-lt: #DDE3DB;
-  --color-text-lt: #1A2118;
-  --color-muted-lt: #6B7A69;
-  --color-accent-lt: #2C6E49;
+  /* Spec design tokens */
+  --bg-page: #f7f6f1;
+  --text-primary: #16211c;
+  --text-secondary: #5f6b64;
+  --text-muted: #7c857f;
+  --text-faint: #a3a99f;
+  --border: #dcdbd2;
+  --accent: #1d9e75;
 
-  --color-fail: #E8756A;
-  --color-warn: #C48B2F;
-  --color-ok: #5FB98A;
+  /* Evidence chain layer colors (measurement → claim, darkening) */
+  --layer-1: #c6d4cc;
+  --layer-2: #9dc0b0;
+  --layer-3: #5aa88b;
+  --layer-4: #0f6e56;
+
+  /* Severity badge tokens */
+  --warn-bg: #faeeda;
+  --warn-fg: #854f0b;
+  --ok-bg: #eaf3de;
+  --ok-fg: #3b6d11;
+  --fail-bg: #fcebeb;
+  --fail-fg: #a32d2d;
 }
 
 *, *::before, *::after {
@@ -32,20 +47,46 @@
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background-color: var(--color-surface);
-  color: var(--color-text);
-  color-scheme: dark;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  color-scheme: light;
   -webkit-font-smoothing: antialiased;
 }
 
-body[data-theme="light"] {
-  background-color: var(--color-surface-lt);
-  color: var(--color-text-lt);
-  color-scheme: light;
+/* Claim entry animation */
+@keyframes fin {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.claim-enter {
+  animation: fin 0.6s ease both;
+}
+
+/* Sweep background animation */
+@keyframes vsweep {
+  0%   { transform: translateY(-30%); }
+  100% { transform: translateY(430%); }
+}
+
+.sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 120px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, #1d9e75, transparent);
+  opacity: 0.13;
+  animation: vsweep 10s linear infinite;
+}
+
+.sweep-loading {
+  opacity: 0.22;
+  animation-duration: 2s;
 }
 
 *:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 2px;
 }

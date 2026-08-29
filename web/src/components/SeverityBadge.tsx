@@ -4,22 +4,29 @@ interface Props {
   severity: Severity
 }
 
-const styles: Record<Severity, string> = {
-  fail: 'border border-[var(--color-fail)] text-[var(--color-fail)] bg-[color-mix(in_srgb,var(--color-fail)_12%,transparent)]',
-  warn: 'border border-[var(--color-warn)] text-[var(--color-warn)]',
-  ok: 'border border-[var(--color-ok)] text-[var(--color-ok)]',
+const styles: Record<Severity, React.CSSProperties> = {
+  fail: { background: 'var(--fail-bg)', color: 'var(--fail-fg)' },
+  warn: { background: 'var(--warn-bg)', color: 'var(--warn-fg)' },
+  ok:   { background: 'var(--ok-bg)',   color: 'var(--ok-fg)'   },
 }
 
 const labels: Record<Severity, string> = {
-  fail: 'FAIL',
-  warn: 'WARN',
-  ok: 'OK',
+  fail: 'FALHA',
+  warn: 'ATENÇÃO',
+  ok:   'OK',
 }
 
 export function SeverityBadge({ severity }: Props) {
   return (
     <span
-      className={`inline-block font-mono text-[10px] tracking-widest px-1.5 py-0.5 rounded ${styles[severity]}`}
+      className="inline-block font-sans font-normal rounded shrink-0"
+      style={{
+        fontSize: '10px',
+        letterSpacing: '0.09em',
+        padding: '2px 6px',
+        textTransform: 'uppercase',
+        ...styles[severity],
+      }}
       aria-label={`severidade: ${labels[severity]}`}
     >
       {labels[severity]}

@@ -117,6 +117,7 @@ export interface RunOut {
 export interface ClaimSummary {
   id: string
   text: string
+  explanation?: string
   supports: string[]
   severity: 'ok' | 'warn' | 'fail'
 }
